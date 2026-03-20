@@ -41,7 +41,7 @@
        CONSTANTS & CONFIG
        ══════════════════════════════════════════════════════════════════ */
 
-    const APP_VERSION = '1.3.1';
+    const APP_VERSION = '1.4.0';
     const STORAGE_KEY = 'aep-dashboard-v1';
     const CONFIG_KEY = 'aep-dashboard-config-v1';
 
@@ -68,11 +68,51 @@
       'Federated Audience Composition', 'Adobe Target', 'Marketo Engage'
     ];
 
-    const ROLES = [
-      'Solution Architect', 'Technical Lead', 'Data Engineer',
-      'Implementation Consultant', 'Project Manager', 'Analytics Engineer',
-      'QA Engineer', 'Client Lead / Sponsor'
-    ];
+    const ROLE_CATEGORIES = {
+      'Adobe / Partner Delivery': [
+        'Solution Architect',
+        'Technical Architect',
+        'Technical Lead',
+        'Implementation Consultant',
+        'Data Engineer',
+        'Analytics Engineer',
+        'AJO Specialist',
+        'CDP Specialist',
+        'CJA Specialist',
+        'Offer Decisioning Specialist',
+        'Identity & Profile Specialist',
+        'Web SDK / Data Collection Engineer',
+        'Destinations & Activation Specialist',
+        'QA Engineer',
+        'DevOps / Platform Engineer',
+      ],
+      'Project & Account': [
+        'Project Manager',
+        'Program Manager',
+        'Engagement Manager',
+        'Account Director',
+        'Delivery Lead',
+        'Scrum Master',
+      ],
+      'Client Team': [
+        'Client Executive Sponsor',
+        'Client Product Owner',
+        'Client Technical Lead',
+        'Client Data Architect',
+        'Client Analytics Lead',
+        'Client IT / Engineering Lead',
+        'Client Marketing Lead',
+        'Client Privacy / Compliance Lead',
+      ],
+      'Adobe Field': [
+        'Adobe CSM (Customer Success Manager)',
+        'Adobe TAM (Technical Account Manager)',
+        'Adobe Solutions Consultant',
+        'Adobe Support Engineer',
+        'Adobe Field Engineer',
+      ],
+    };
+    const ROLES = Object.values(ROLE_CATEGORIES).flat();
 
     const DEFAULT_SOLUTION_SECTIONS = [
       { key: 'schemas', label: 'XDM Schemas' },
@@ -283,13 +323,32 @@
 
     const ROLE_KEYWORDS = {
       'Solution Architect': [/solution\s*architect/i, /\bsa\b/i],
+      'Technical Architect': [/technical\s*architect/i],
       'Technical Lead': [/technical?\s*lead/i, /tech\s*lead/i],
-      'Data Engineer': [/data\s*engineer/i],
       'Implementation Consultant': [/implementation\s*consultant/i, /impl?\s*consultant/i],
-      'Project Manager': [/project\s*manager/i, /\bpm\b/i, /program\s*manager/i],
+      'Data Engineer': [/data\s*engineer/i],
       'Analytics Engineer': [/analytics?\s*engineer/i],
+      'AJO Specialist': [/ajo\s*specialist/i, /journey\s*optimi[sz]er\s*specialist/i],
+      'CDP Specialist': [/cdp\s*specialist/i, /rt-?cdp\s*specialist/i],
+      'CJA Specialist': [/cja\s*specialist/i, /customer\s*journey\s*analytics\s*specialist/i],
+      'Web SDK / Data Collection Engineer': [/web\s*sdk\s*engineer/i, /data\s*collection\s*engineer/i, /tag\s*manager/i],
       'QA Engineer': [/qa\s*engineer/i, /quality\s*assurance/i],
-      'Client Lead / Sponsor': [/client\s*(lead|sponsor)/i, /executive\s*sponsor/i, /account\s*lead/i],
+      'DevOps / Platform Engineer': [/devops/i, /platform\s*engineer/i],
+      'Project Manager': [/project\s*manager/i, /\bpm\b/i],
+      'Program Manager': [/program\s*manager/i],
+      'Engagement Manager': [/engagement\s*manager/i],
+      'Delivery Lead': [/delivery\s*lead/i],
+      'Scrum Master': [/scrum\s*master/i],
+      'Client Executive Sponsor': [/executive\s*sponsor/i, /exec\s*sponsor/i],
+      'Client Product Owner': [/product\s*owner/i, /\bpo\b/i],
+      'Client Technical Lead': [/client\s*tech/i],
+      'Client Data Architect': [/client\s*data\s*architect/i, /data\s*architect/i],
+      'Client Analytics Lead': [/analytics\s*lead/i, /analytics\s*director/i],
+      'Client Marketing Lead': [/marketing\s*lead/i, /marketing\s*director/i],
+      'Client Privacy / Compliance Lead': [/privacy\s*(lead|officer)/i, /compliance\s*(lead|officer)/i, /\bdpo\b/i],
+      'Adobe CSM (Customer Success Manager)': [/\bcsm\b/i, /customer\s*success/i],
+      'Adobe TAM (Technical Account Manager)': [/\btam\b/i, /technical\s*account\s*manager/i],
+      'Adobe Solutions Consultant': [/adobe\s*solutions?\s*consultant/i],
     };
 
     const VERTICAL_KEYWORDS = {
@@ -1259,7 +1318,11 @@
                       <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 80px auto', gap: 8, alignItems: 'center' }}>
                         <select value={r.role} onChange={e => updateResource(i, 'role', e.target.value)} style={{ ...styles.select, width: '100%' }}>
                           <option value="">Select Role</option>
-                          {ROLES.map(role => <option key={role} value={role}>{role}</option>)}
+                          {Object.entries(ROLE_CATEGORIES).map(([group, roles]) => (
+                            <optgroup key={group} label={group}>
+                              {roles.map(role => <option key={role} value={role}>{role}</option>)}
+                            </optgroup>
+                          ))}
                         </select>
                         <input value={r.name} onChange={e => updateResource(i, 'name', e.target.value)} style={styles.input} placeholder="Name" />
                         <input value={r.allocation} onChange={e => updateResource(i, 'allocation', e.target.value)} style={styles.input} placeholder="%" />

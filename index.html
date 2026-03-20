@@ -41,7 +41,7 @@
        CONSTANTS & CONFIG
        ══════════════════════════════════════════════════════════════════ */
 
-    const APP_VERSION = '1.4.0';
+    const APP_VERSION = '1.4.1';
     const STORAGE_KEY = 'aep-dashboard-v1';
     const CONFIG_KEY = 'aep-dashboard-config-v1';
 
@@ -70,6 +70,7 @@
 
     const ROLE_CATEGORIES = {
       'Adobe / Partner Delivery': [
+        'AEP Architect',
         'Solution Architect',
         'Technical Architect',
         'Technical Lead',
@@ -322,6 +323,7 @@
     };
 
     const ROLE_KEYWORDS = {
+      'AEP Architect': [/aep\s*architect/i, /platform\s*architect/i],
       'Solution Architect': [/solution\s*architect/i, /\bsa\b/i],
       'Technical Architect': [/technical\s*architect/i],
       'Technical Lead': [/technical?\s*lead/i, /tech\s*lead/i],

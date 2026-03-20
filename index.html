@@ -241,6 +241,14 @@
       return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     };
 
+    const isOverdue = (d) => d && new Date(d + 'T23:59:59') < new Date();
+
+    const isDueSoon = (d) => {
+      if (!d) return false;
+      const diff = (new Date(d + 'T23:59:59') - new Date()) / 86400000;
+      return diff >= 0 && diff <= 2;
+    };
+
     const formatTimestamp = (ts) => {
       const diff = Date.now() - ts;
       const mins = Math.floor(diff / 60000);
@@ -656,15 +664,6 @@
       });
       const completed = todos.filter(t => t.done);
 
-      const isOverdue = (d) => d && new Date(d + 'T23:59:59') < new Date();
-      const isDueSoon = (d) => {
-        if (!d) return false;
-        const due = new Date(d + 'T23:59:59');
-        const now = new Date();
-        const diff = (due - now) / 86400000;
-        return diff >= 0 && diff <= 2;
-      };
-
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {/* Add new todo */}
@@ -789,14 +788,6 @@
         return diff >= 0 && diff <= 3;
       });
       const highPriority = active.filter(t => t.priority === 'high');
-
-      const isOverdue = (d) => d && new Date(d + 'T23:59:59') < new Date();
-      const isDueSoon = (d) => {
-        if (!d) return false;
-        const due = new Date(d + 'T23:59:59');
-        const diff = (due - new Date()) / 86400000;
-        return diff >= 0 && diff <= 2;
-      };
 
       // Group by account
       const byAccount = {};
@@ -1046,6 +1037,15 @@
               ) : (
                 <>
                   <button style={styles.editBtn} onClick={() => setEditing(true)}>Edit</button>
+                  <button style={{ ...styles.editBtn, color: THEME.accent, borderColor: THEME.accent }} onClick={() => {
+                    const { updatedAt, createdAt, ...exportData } = account;
+                    const json = JSON.stringify(exportData, null, 2);
+                    const blob = new Blob([json], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url; a.download = `${account.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()}_export.json`;
+                    a.click(); URL.revokeObjectURL(url);
+                  }}>Export</button>
                   <button style={{ ...styles.editBtn, color: THEME.error, borderColor: THEME.error }} onClick={() => onDelete(account.id)}>Delete</button>
                 </>
               )}
@@ -1715,7 +1715,24 @@
             <span style={{ fontSize: 10, color: THEME.textMuted }}>{account.engagementType}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 10, color: THEME.primary, fontWeight: 500 }}>{account.currentPhase}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 10, color: THEME.primary, fontWeight: 500 }}>{account.currentPhase}</span>
+              {(() => {
+                const openTodos = (account.todos || []).filter(t => !t.done).length;
+                const hasOverdue = (account.todos || []).some(t => !t.done && isOverdue(t.dueDate));
+                if (openTodos === 0) return null;
+                return (
+                  <span style={{
+                    fontSize: 9, fontWeight: 600, padding: '1px 5px', borderRadius: 8,
+                    background: hasOverdue ? THEME.error + '25' : THEME.primary + '25',
+                    color: hasOverdue ? THEME.error : THEME.accent,
+                    letterSpacing: '0.02em',
+                  }}>
+                    {openTodos} task{openTodos !== 1 ? 's' : ''}
+                  </span>
+                );
+              })()}
+            </div>
             <span style={{ fontSize: 9, color: THEME.textMuted }}>{formatTimestamp(account.updatedAt)}</span>
           </div>
         </div>
@@ -1763,7 +1780,13 @@
           result = result.filter(a =>
             a.name.toLowerCase().includes(term) ||
             a.vertical.toLowerCase().includes(term) ||
-            a.engagementType.toLowerCase().includes(term)
+            a.engagementType.toLowerCase().includes(term) ||
+            (a.scopeSummary || '').toLowerCase().includes(term) ||
+            (a.risks || '').toLowerCase().includes(term) ||
+            (a.nextActions || '').toLowerCase().includes(term) ||
+            (a.notes || '').toLowerCase().includes(term) ||
+            (a.todos || []).some(t => t.text.toLowerCase().includes(term)) ||
+            (a.componentsInScope || []).some(c => c.toLowerCase().includes(term))
           );
         }
         return result.sort((a, b) => {
@@ -1779,22 +1802,26 @@
       };
 
       const handleImport = (parsed) => {
+        const now = Date.now();
         const acc = {
-          id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+          id: crypto.randomUUID(),
           name: parsed.name || 'Imported Account',
           vertical: parsed.vertical || '',
           engagementType: parsed.engagementType || engagementTypes[0] || '',
-          health: 'On Track',
-          currentPhase: 'Discovery',
+          health: parsed.health || 'On Track',
+          currentPhase: parsed.currentPhase || 'Discovery',
           scopeSummary: parsed.scopeSummary || '',
           componentsInScope: parsed.componentsInScope || [],
-          timeline: parsed.timeline || PHASES.map(p => ({ phase: p, startDate: '', endDate: '', status: 'Not Started' })),
+          timeline: parsed.timeline || PHASES.map(p => ({ phase: p, startDate: '', endDate: '', status: 'Upcoming' })),
           resources: parsed.resources || [],
           solutionDesign: parsed.solutionDesign || DEFAULT_SOLUTION_SECTIONS.reduce((o, s) => { o[s.key] = ''; return o; }, {}),
-          risks: parsed.risks || [],
-          nextActions: [],
-          todos: [],
-          createdAt: new Date().toISOString(),
+          architectureDiagrams: parsed.architectureDiagrams || [],
+          risks: typeof parsed.risks === 'string' ? parsed.risks : Array.isArray(parsed.risks) ? parsed.risks.join('; ') : '',
+          nextActions: typeof parsed.nextActions === 'string' ? parsed.nextActions : Array.isArray(parsed.nextActions) ? parsed.nextActions.join('; ') : '',
+          notes: parsed.notes || '',
+          todos: parsed.todos || [],
+          updatedAt: now,
+          createdAt: now,
         };
         setAccounts(prev => [acc, ...prev]);
         setSelectedId(acc.id);
@@ -1934,14 +1961,6 @@
         padding: '20px 28px',
         overflow: 'hidden',
         height: '100vh',
-      },
-      emptyState: {
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        opacity: 0.6,
       },
       addBtn: {
         fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 12,

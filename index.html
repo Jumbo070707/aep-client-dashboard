@@ -154,6 +154,13 @@
         risks: 'Web SDK migration timeline slipping due to dev resource constraints. Identity stitching rates below target (58% vs 75% goal). POS data feed has inconsistent product ID formatting.',
         nextActions: 'Escalate Web SDK dev resourcing with client IT director. Schedule identity resolution workshop for Friday.',
         notes: '',
+        todos: [
+          { id: 't1', text: 'Escalate Web SDK dev resourcing with client IT director', priority: 'high', done: false, dueDate: '2026-03-22', createdAt: Date.now() - 86400000 },
+          { id: 't2', text: 'Schedule identity resolution workshop', priority: 'high', done: false, dueDate: '2026-03-21', createdAt: Date.now() - 86400000 * 2 },
+          { id: 't3', text: 'Review POS data feed formatting with data engineering', priority: 'medium', done: false, dueDate: '2026-03-25', createdAt: Date.now() - 86400000 },
+          { id: 't4', text: 'Prepare UAT test plan for Web SDK migration', priority: 'medium', done: false, dueDate: '2026-04-01', createdAt: Date.now() },
+          { id: 't5', text: 'Complete discovery workshop notes', priority: 'low', done: true, dueDate: '', createdAt: Date.now() - 86400000 * 30 },
+        ],
         updatedAt: Date.now() - 1000 * 60 * 45,
         createdAt: Date.now() - 1000 * 60 * 60 * 24 * 60,
       },
@@ -188,6 +195,11 @@
         risks: 'Compliance review pending on PII handling for Offer Decisioning. Identity resolution at 62% vs 80% target.',
         nextActions: 'Deliver revised identity resolution architecture. Prep compliance documentation for Offer Decisioning data flows.',
         notes: '',
+        todos: [
+          { id: 't6', text: 'Deliver revised identity resolution architecture doc', priority: 'high', done: false, dueDate: '2026-03-24', createdAt: Date.now() - 86400000 },
+          { id: 't7', text: 'Prep compliance documentation for Offer Decisioning', priority: 'high', done: false, dueDate: '2026-03-28', createdAt: Date.now() - 86400000 * 2 },
+          { id: 't8', text: 'Review CJA dashboard mockups with analytics team', priority: 'medium', done: false, dueDate: '2026-03-26', createdAt: Date.now() },
+        ],
         updatedAt: Date.now() - 1000 * 60 * 60 * 3,
         createdAt: Date.now() - 1000 * 60 * 60 * 24 * 30,
       },
@@ -219,6 +231,7 @@
       risks: '',
       nextActions: '',
       notes: '',
+      todos: [],
       updatedAt: Date.now(),
       createdAt: Date.now(),
     });
@@ -600,10 +613,302 @@
       );
     }
 
+    /* ── Account Todo List ─────────────────────────────────────────── */
+    const PRIORITIES = ['high', 'medium', 'low'];
+    const priorityColor = (p) => p === 'high' ? THEME.error : p === 'medium' ? '#F5A623' : THEME.textMuted;
+
+    function AccountTodoList({ todos = [], onUpdate }) {
+      const [newText, setNewText] = useState('');
+      const [newPriority, setNewPriority] = useState('medium');
+      const [newDueDate, setNewDueDate] = useState('');
+      const [showCompleted, setShowCompleted] = useState(false);
+
+      const addTodo = () => {
+        if (!newText.trim()) return;
+        const todo = {
+          id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+          text: newText.trim(),
+          priority: newPriority,
+          done: false,
+          dueDate: newDueDate,
+          createdAt: Date.now(),
+        };
+        onUpdate([todo, ...todos]);
+        setNewText('');
+        setNewDueDate('');
+      };
+
+      const toggleDone = (id) => {
+        onUpdate(todos.map(t => t.id === id ? { ...t, done: !t.done } : t));
+      };
+
+      const removeTodo = (id) => {
+        onUpdate(todos.filter(t => t.id !== id));
+      };
+
+      const active = todos.filter(t => !t.done).sort((a, b) => {
+        const pi = { high: 0, medium: 1, low: 2 };
+        if (pi[a.priority] !== pi[b.priority]) return pi[a.priority] - pi[b.priority];
+        if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
+        if (a.dueDate) return -1;
+        if (b.dueDate) return 1;
+        return b.createdAt - a.createdAt;
+      });
+      const completed = todos.filter(t => t.done);
+
+      const isOverdue = (d) => d && new Date(d + 'T23:59:59') < new Date();
+      const isDueSoon = (d) => {
+        if (!d) return false;
+        const due = new Date(d + 'T23:59:59');
+        const now = new Date();
+        const diff = (due - now) / 86400000;
+        return diff >= 0 && diff <= 2;
+      };
+
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {/* Add new todo */}
+          <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end' }}>
+            <div style={{ flex: 1 }}>
+              <input
+                value={newText}
+                onChange={e => setNewText(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && addTodo()}
+                style={{ ...styles.input, marginBottom: 0 }}
+                placeholder="Add a to-do item..."
+              />
+            </div>
+            <select value={newPriority} onChange={e => setNewPriority(e.target.value)} style={{ ...styles.select, height: 34 }}>
+              {PRIORITIES.map(p => <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
+            </select>
+            <input type="date" value={newDueDate} onChange={e => setNewDueDate(e.target.value)}
+              style={{ ...styles.input, width: 130, marginBottom: 0, colorScheme: 'dark' }} />
+            <button onClick={addTodo} style={{ ...styles.smallBtn, background: THEME.primary, height: 34, padding: '0 14px' }}>Add</button>
+          </div>
+
+          {/* Active todos */}
+          {active.length === 0 && completed.length === 0 && (
+            <p style={{ fontSize: 12, color: THEME.textMuted, fontStyle: 'italic', textAlign: 'center', padding: 20 }}>
+              No to-do items yet. Add tasks to track what needs to be done for this account.
+            </p>
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {active.map(t => (
+              <div key={t.id} style={{
+                display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px',
+                background: THEME.surfaceAlt, borderRadius: 4,
+                borderLeft: `3px solid ${priorityColor(t.priority)}`,
+                border: `1px solid ${THEME.border}`,
+                borderLeftColor: priorityColor(t.priority), borderLeftWidth: 3,
+              }}>
+                <button onClick={() => toggleDone(t.id)} style={{
+                  width: 18, height: 18, borderRadius: 3, border: `2px solid ${THEME.border}`,
+                  background: 'transparent', cursor: 'pointer', flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }} />
+                <span style={{ flex: 1, fontSize: 12, color: THEME.text }}>{t.text}</span>
+                {t.dueDate && (
+                  <span style={{
+                    fontSize: 10, fontWeight: 500, flexShrink: 0, padding: '2px 6px', borderRadius: 3,
+                    color: isOverdue(t.dueDate) ? THEME.error : isDueSoon(t.dueDate) ? '#F5A623' : THEME.textMuted,
+                    background: isOverdue(t.dueDate) ? THEME.error + '15' : isDueSoon(t.dueDate) ? '#F5A62315' : 'transparent',
+                  }}>
+                    {formatDate(t.dueDate)}
+                  </span>
+                )}
+                <span style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: priorityColor(t.priority), flexShrink: 0 }}>
+                  {t.priority}
+                </span>
+                <button onClick={() => removeTodo(t.id)} style={{ ...styles.iconBtn, fontSize: 12, color: THEME.textMuted }}>✕</button>
+              </div>
+            ))}
+          </div>
+
+          {/* Completed toggle */}
+          {completed.length > 0 && (
+            <div>
+              <button onClick={() => setShowCompleted(!showCompleted)} style={{
+                background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Inter, sans-serif',
+                fontSize: 10, fontWeight: 500, color: THEME.textMuted, letterSpacing: '0.04em', padding: '4px 0',
+              }}>
+                {showCompleted ? '▾' : '▸'} {completed.length} completed
+              </button>
+              {showCompleted && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 4 }}>
+                  {completed.map(t => (
+                    <div key={t.id} style={{
+                      display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
+                      background: THEME.surface, borderRadius: 4, opacity: 0.6,
+                    }}>
+                      <button onClick={() => toggleDone(t.id)} style={{
+                        width: 18, height: 18, borderRadius: 3, border: `2px solid ${THEME.success}`,
+                        background: THEME.success + '30', cursor: 'pointer', flexShrink: 0,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: THEME.success, fontSize: 11, fontWeight: 700,
+                      }}>✓</button>
+                      <span style={{ flex: 1, fontSize: 12, color: THEME.textMuted, textDecoration: 'line-through' }}>{t.text}</span>
+                      <button onClick={() => removeTodo(t.id)} style={{ ...styles.iconBtn, fontSize: 12, color: THEME.textMuted }}>✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    /* ══════════════════════════════════════════════════════════════════
+       AGGREGATE TODO VIEW — shows all todos across accounts
+       ══════════════════════════════════════════════════════════════════ */
+    function AggregateTodoView({ accounts, onSelectAccount }) {
+      const allTodos = useMemo(() => {
+        const items = [];
+        accounts.forEach(acct => {
+          (acct.todos || []).forEach(t => {
+            items.push({ ...t, accountId: acct.id, accountName: acct.name, accountHealth: acct.health });
+          });
+        });
+        return items;
+      }, [accounts]);
+
+      const active = allTodos.filter(t => !t.done).sort((a, b) => {
+        const pi = { high: 0, medium: 1, low: 2 };
+        if (pi[a.priority] !== pi[b.priority]) return pi[a.priority] - pi[b.priority];
+        if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
+        if (a.dueDate) return -1;
+        if (b.dueDate) return 1;
+        return b.createdAt - a.createdAt;
+      });
+
+      const overdue = active.filter(t => t.dueDate && new Date(t.dueDate + 'T23:59:59') < new Date());
+      const dueSoon = active.filter(t => {
+        if (!t.dueDate) return false;
+        const due = new Date(t.dueDate + 'T23:59:59');
+        const diff = (due - new Date()) / 86400000;
+        return diff >= 0 && diff <= 3;
+      });
+      const highPriority = active.filter(t => t.priority === 'high');
+
+      const isOverdue = (d) => d && new Date(d + 'T23:59:59') < new Date();
+      const isDueSoon = (d) => {
+        if (!d) return false;
+        const due = new Date(d + 'T23:59:59');
+        const diff = (due - new Date()) / 86400000;
+        return diff >= 0 && diff <= 2;
+      };
+
+      // Group by account
+      const byAccount = {};
+      active.forEach(t => {
+        if (!byAccount[t.accountId]) byAccount[t.accountId] = { name: t.accountName, health: t.accountHealth, todos: [] };
+        byAccount[t.accountId].todos.push(t);
+      });
+
+      return (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '24px 32px', overflow: 'hidden' }}>
+          {/* Header */}
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <div style={{ width: 4, height: 20, background: THEME.primary, borderRadius: 2 }} />
+              <h2 style={{ fontSize: 15, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: THEME.text }}>
+                Action Center
+              </h2>
+            </div>
+            <span style={{ fontSize: 11, color: THEME.textMuted, marginLeft: 12 }}>
+              {active.length} open task{active.length !== 1 ? 's' : ''} across {accounts.length} account{accounts.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+
+          {/* Summary cards */}
+          <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
+            {[
+              { label: 'Overdue', count: overdue.length, color: THEME.error },
+              { label: 'Due Soon', count: dueSoon.length, color: '#F5A623' },
+              { label: 'High Priority', count: highPriority.length, color: THEME.error },
+              { label: 'Total Open', count: active.length, color: THEME.primary },
+            ].map(s => (
+              <div key={s.label} style={{
+                flex: 1, background: THEME.surfaceAlt, borderRadius: 4, padding: '12px 14px',
+                border: `1px solid ${s.count > 0 ? s.color + '40' : THEME.border}`,
+              }}>
+                <div style={{ fontSize: 22, fontWeight: 700, color: s.count > 0 ? s.color : THEME.textMuted }}>{s.count}</div>
+                <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: THEME.textMuted, marginTop: 2 }}>{s.label}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Scrollable todo list grouped by account */}
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            {active.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: 40, color: THEME.textMuted }}>
+                <p style={{ fontSize: 14, fontWeight: 500, marginBottom: 8 }}>All clear!</p>
+                <p style={{ fontSize: 12 }}>No open tasks across your accounts. Add to-dos from each account's Actions tab.</p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {Object.entries(byAccount).map(([accountId, group]) => (
+                  <div key={accountId}>
+                    <button onClick={() => onSelectAccount(accountId)} style={{
+                      background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Inter, sans-serif',
+                      display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, padding: 0,
+                    }}>
+                      <HealthDot status={group.health} size={7} />
+                      <span style={{ fontSize: 12, fontWeight: 600, color: THEME.text, letterSpacing: '0.04em' }}>{group.name}</span>
+                      <span style={{ fontSize: 10, color: THEME.textMuted }}>({group.todos.length})</span>
+                      <span style={{ fontSize: 10, color: THEME.primary }}>→</span>
+                    </button>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, paddingLeft: 14 }}>
+                      {group.todos.map(t => (
+                        <div key={t.id} style={{
+                          display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
+                          background: THEME.surfaceAlt, borderRadius: 4,
+                          borderLeft: `3px solid ${priorityColor(t.priority)}`,
+                        }}>
+                          <span style={{ flex: 1, fontSize: 12, color: THEME.text }}>{t.text}</span>
+                          {t.dueDate && (
+                            <span style={{
+                              fontSize: 10, fontWeight: 500, flexShrink: 0, padding: '2px 6px', borderRadius: 3,
+                              color: isOverdue(t.dueDate) ? THEME.error : isDueSoon(t.dueDate) ? '#F5A623' : THEME.textMuted,
+                              background: isOverdue(t.dueDate) ? THEME.error + '15' : isDueSoon(t.dueDate) ? '#F5A62315' : 'transparent',
+                            }}>
+                              {formatDate(t.dueDate)}
+                            </span>
+                          )}
+                          <span style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: priorityColor(t.priority), flexShrink: 0 }}>
+                            {t.priority}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Quick Stats Footer */}
+          <div style={{ borderTop: `1px solid ${THEME.border}`, paddingTop: 14, marginTop: 14, display: 'flex', gap: 20 }}>
+            {[
+              { label: 'Total Accounts', count: accounts.length, color: THEME.text },
+              { label: 'At Risk', count: accounts.filter(a => a.health === 'At Risk').length, color: '#F5A623' },
+              { label: 'Off Track', count: accounts.filter(a => a.health === 'Off Track').length, color: THEME.error },
+              { label: 'On Track', count: accounts.filter(a => a.health === 'On Track').length, color: THEME.success },
+            ].map(s => (
+              <div key={s.label} style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 18, fontWeight: 700, color: s.color }}>{s.count}</div>
+                <div style={{ fontSize: 9, fontWeight: 500, color: THEME.textMuted, letterSpacing: '0.08em', textTransform: 'uppercase', marginTop: 2 }}>{s.label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
     /* ══════════════════════════════════════════════════════════════════
        ACCOUNT DETAIL PANEL (Right side)
        ══════════════════════════════════════════════════════════════════ */
-    function AccountDetail({ account, onUpdate, onClose, engagementTypes }) {
+    function AccountDetail({ account, onUpdate, onDelete, onClose, engagementTypes }) {
       const [activeTab, setActiveTab] = useState('overview');
       const [editing, setEditing] = useState(false);
       const [form, setForm] = useState({ ...account });
@@ -627,6 +932,7 @@
 
       const tabs = [
         { key: 'overview', label: 'Overview' },
+        { key: 'actions', label: `Actions${(account.todos || []).filter(t => !t.done).length ? ` (${(account.todos || []).filter(t => !t.done).length})` : ''}` },
         { key: 'scope', label: 'Scope' },
         { key: 'timeline', label: 'Timeline' },
         { key: 'resources', label: 'Resources' },
@@ -738,7 +1044,10 @@
                   <button style={styles.saveBtn} onClick={saveChanges}>Save</button>
                 </>
               ) : (
-                <button style={styles.editBtn} onClick={() => setEditing(true)}>Edit</button>
+                <>
+                  <button style={styles.editBtn} onClick={() => setEditing(true)}>Edit</button>
+                  <button style={{ ...styles.editBtn, color: THEME.error, borderColor: THEME.error }} onClick={() => onDelete(account.id)}>Delete</button>
+                </>
               )}
               <button style={{ ...styles.iconBtn, fontSize: 16 }} onClick={onClose}>✕</button>
             </div>
@@ -826,6 +1135,17 @@
                 <div style={{ fontSize: 10, color: THEME.textMuted, borderTop: `1px solid ${THEME.border}`, paddingTop: 10 }}>
                   Last updated {formatTimestamp(account.updatedAt)}
                 </div>
+              </div>
+            )}
+
+            {/* ACTIONS TAB */}
+            {activeTab === 'actions' && (
+              <div style={{ animation: 'fadeIn 0.2s ease' }}>
+                <SectionHeader title="To-Do List" />
+                <AccountTodoList
+                  todos={account.todos || []}
+                  onUpdate={(newTodos) => onUpdate({ ...account, todos: newTodos, updatedAt: Date.now() })}
+                />
               </div>
             )}
 
@@ -1473,6 +1793,7 @@
           solutionDesign: parsed.solutionDesign || DEFAULT_SOLUTION_SECTIONS.reduce((o, s) => { o[s.key] = ''; return o; }, {}),
           risks: parsed.risks || [],
           nextActions: [],
+          todos: [],
           createdAt: new Date().toISOString(),
         };
         setAccounts(prev => [acc, ...prev]);
@@ -1563,34 +1884,12 @@
               <AccountDetail
                 account={selectedAccount}
                 onUpdate={updateAccount}
+                onDelete={deleteAccount}
                 onClose={() => setSelectedId(null)}
                 engagementTypes={engagementTypes}
               />
             ) : (
-              <div style={styles.emptyState}>
-                <div style={{ width: 4, height: 40, background: THEME.primary, borderRadius: 2, marginBottom: 16 }} />
-                <h2 style={{ fontSize: 16, fontWeight: 700, color: THEME.textMuted, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>
-                  Select an Account
-                </h2>
-                <p style={{ fontSize: 13, color: THEME.textMuted, maxWidth: 340, textAlign: 'center', lineHeight: 1.6 }}>
-                  Choose an account from the sidebar to view scope, timelines, resourcing, and solution design details.
-                </p>
-
-                {/* Quick Stats */}
-                <div style={{ display: 'flex', gap: 16, marginTop: 30 }}>
-                  {[
-                    { label: 'Total', count: accounts.length, color: THEME.text },
-                    { label: 'At Risk', count: healthCounts['At Risk'] || 0, color: '#F5A623' },
-                    { label: 'Off Track', count: healthCounts['Off Track'] || 0, color: THEME.error },
-                    { label: 'On Track', count: healthCounts['On Track'] || 0, color: THEME.success },
-                  ].map(s => (
-                    <div key={s.label} style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: 24, fontWeight: 700, color: s.color }}>{s.count}</div>
-                      <div style={{ fontSize: 9, fontWeight: 500, color: THEME.textMuted, letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 2 }}>{s.label}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <AggregateTodoView accounts={accounts} onSelectAccount={setSelectedId} />
             )}
           </div>
 

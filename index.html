@@ -1,0 +1,1227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AEP Client Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body, #root { height: 100%; }
+    body { background: #0D0D0D; font-family: 'Inter', Arial, sans-serif; }
+    @keyframes fadeSlideIn {
+      from { opacity: 0; transform: translateY(-8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+    ::selection { background: #006EF5; color: #fff; }
+    input::placeholder, textarea::placeholder { color: #4A4A4A; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #555; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback, useMemo } = React;
+
+    /* ══════════════════════════════════════════════════════════════════
+       CONSTANTS & CONFIG
+       ══════════════════════════════════════════════════════════════════ */
+
+    const STORAGE_KEY = 'aep-dashboard-v1';
+    const CONFIG_KEY = 'aep-dashboard-config-v1';
+
+    const DEFAULT_ENGAGEMENT_TYPES = ['AEP Implementation', 'AEP Optimization', 'Migration'];
+
+    const HEALTH_STATUSES = ['On Track', 'At Risk', 'Off Track', 'On Hold', 'Complete'];
+
+    const PHASES = ['Discovery', 'Design', 'Build', 'UAT', 'Hypercare', 'Go-Live', 'Optimization'];
+
+    /* User-extensible config (engagement types, etc.) */
+    const loadConfig = () => {
+      try {
+        const stored = localStorage.getItem(CONFIG_KEY);
+        if (stored) return JSON.parse(stored);
+      } catch {}
+      return { engagementTypes: DEFAULT_ENGAGEMENT_TYPES };
+    };
+    const saveConfig = (cfg) => localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg));
+
+    const AEP_COMPONENTS = [
+      'Real-Time CDP', 'Journey Optimizer (AJO)', 'Customer Journey Analytics (CJA)',
+      'Offer Decisioning', 'Data Collection / Web SDK', 'Mobile SDK',
+      'Destinations', 'Identity Service', 'Data Hygiene',
+      'Federated Audience Composition', 'Adobe Target', 'Marketo Engage'
+    ];
+
+    const ROLES = [
+      'Solution Architect', 'Technical Lead', 'Data Engineer',
+      'Implementation Consultant', 'Project Manager', 'Analytics Engineer',
+      'QA Engineer', 'Client Lead / Sponsor'
+    ];
+
+    const DEFAULT_SOLUTION_SECTIONS = [
+      { key: 'schemas', label: 'XDM Schemas' },
+      { key: 'datasets', label: 'Datasets' },
+      { key: 'audiences', label: 'Audiences / Segments' },
+      { key: 'journeys', label: 'Journeys' },
+      { key: 'destinations', label: 'Destinations' },
+      { key: 'dataSources', label: 'Data Sources' },
+      { key: 'architectureNotes', label: 'Architecture Notes' },
+    ];
+
+    /* ── BAiCi Theme ──────────────────────────────────────────────── */
+    const THEME = {
+      bg: '#0D0D0D',
+      surface: '#1A1A1A',
+      surfaceAlt: '#222222',
+      card: '#052777',
+      cardHover: '#0a2d6a',
+      primary: '#006EF5',
+      primaryHover: '#0057C4',
+      accent: '#00BFFA',
+      warning: '#E6F913',
+      success: '#008566',
+      error: '#E53935',
+      text: '#FFFFFF',
+      textSecondary: '#D6D6D6',
+      textMuted: '#595959',
+      border: '#333333',
+      borderLight: '#444444',
+    };
+
+    const healthColor = (status) => {
+      switch (status) {
+        case 'On Track': return THEME.success;
+        case 'At Risk': return '#F5A623';
+        case 'Off Track': return THEME.error;
+        case 'On Hold': return THEME.textMuted;
+        case 'Complete': return THEME.accent;
+        default: return THEME.textMuted;
+      }
+    };
+
+    /* ── Seed Data ────────────────────────────────────────────────── */
+    const SEED_DATA = [
+      {
+        id: crypto.randomUUID(),
+        name: 'Nordstrom',
+        vertical: 'Retail',
+        engagementType: 'AEP Implementation',
+        health: 'At Risk',
+        currentPhase: 'Build',
+        scopeSummary: 'Full RT-CDP implementation with Web SDK migration from legacy Analytics. Building unified customer profiles across web, mobile, and in-store POS. Key focus on audience activation to Google and Meta for holiday campaign readiness.',
+        componentsInScope: ['Real-Time CDP', 'Data Collection / Web SDK', 'Destinations', 'Identity Service'],
+        timeline: [
+          { phase: 'Discovery', startDate: '2026-01-06', endDate: '2026-01-31', status: 'Complete' },
+          { phase: 'Design', startDate: '2026-02-03', endDate: '2026-02-28', status: 'Complete' },
+          { phase: 'Build', startDate: '2026-03-03', endDate: '2026-04-25', status: 'In Progress' },
+          { phase: 'UAT', startDate: '2026-04-28', endDate: '2026-05-16', status: 'Upcoming' },
+          { phase: 'Go-Live', startDate: '2026-05-18', endDate: '2026-05-22', status: 'Upcoming' },
+        ],
+        resources: [
+          { role: 'Solution Architect', name: '', allocation: '50%' },
+          { role: 'Technical Lead', name: '', allocation: '100%' },
+          { role: 'Data Engineer', name: '', allocation: '75%' },
+          { role: 'Project Manager', name: '', allocation: '25%' },
+        ],
+        solutionDesign: {
+          schemas: 'Profile (XDM Individual Profile), Web ExperienceEvent, POS Transaction Event, Product Catalog',
+          datasets: 'Web Clickstream, CRM Profiles, POS Transactions, Product Catalog, Loyalty Program',
+          audiences: 'High-Value Shoppers (>$500 LTV), Cart Abandoners (24hr), Loyalty Tier Upgrade Eligible, Lapsed 90-Day',
+          journeys: 'Welcome Series, Cart Abandonment, Post-Purchase Cross-Sell',
+          destinations: 'Google Ads (Customer Match), Meta (Custom Audiences), Salesforce Marketing Cloud',
+          dataSources: 'Website (Web SDK), Mobile App (Mobile SDK), POS System (batch), CRM (Salesforce)',
+          architectureNotes: 'Web SDK implemented via tag manager extension. POS data lands in S3 bucket nightly, ingested via Source Connector. Identity namespace: ECID (primary), CRM_ID, Loyalty_ID. Profile merge policy: timestamp-ordered, no cross-device graph yet.',
+        },
+        architectureDiagrams: [
+          { name: 'Data Flow Architecture', url: '', description: 'End-to-end data ingestion flow from web/mobile/POS into AEP' },
+          { name: 'Identity Graph Design', url: '', description: 'Namespace hierarchy and stitching logic' },
+        ],
+        risks: 'Web SDK migration timeline slipping due to dev resource constraints. Identity stitching rates below target (58% vs 75% goal). POS data feed has inconsistent product ID formatting.',
+        nextActions: 'Escalate Web SDK dev resourcing with client IT director. Schedule identity resolution workshop for Friday.',
+        notes: '',
+        updatedAt: Date.now() - 1000 * 60 * 45,
+        createdAt: Date.now() - 1000 * 60 * 60 * 24 * 60,
+      },
+      {
+        id: crypto.randomUUID(),
+        name: 'Fidelity Investments',
+        vertical: 'Financial Services',
+        engagementType: 'AEP Optimization',
+        health: 'On Track',
+        currentPhase: 'Optimization',
+        scopeSummary: 'Optimizing existing RT-CDP deployment. Focus areas: improving identity resolution rates, expanding audience strategy for wealth management segment, and activating Offer Decisioning for personalized next-best-action on authenticated pages.',
+        componentsInScope: ['Real-Time CDP', 'Offer Decisioning', 'Customer Journey Analytics (CJA)', 'Identity Service'],
+        timeline: [
+          { phase: 'Discovery', startDate: '2026-02-10', endDate: '2026-02-21', status: 'Complete' },
+          { phase: 'Optimization', startDate: '2026-02-24', endDate: '2026-05-30', status: 'In Progress' },
+        ],
+        resources: [
+          { role: 'Solution Architect', name: '', allocation: '30%' },
+          { role: 'Analytics Engineer', name: '', allocation: '50%' },
+          { role: 'Implementation Consultant', name: '', allocation: '75%' },
+        ],
+        solutionDesign: {
+          schemas: 'Enhanced Profile with financial attributes, Offer Proposition Event',
+          datasets: 'Authenticated Web Sessions, Account Holdings, Offer Interactions',
+          audiences: 'HNW Segment (>$1M AUM), Retirement Planning Active, Digital-First Clients, Cross-Sell Eligible',
+          journeys: 'Next-Best-Action Offer Flow, Retirement Milestone Triggers',
+          destinations: 'Adobe Target (on-site personalization), Internal CRM',
+          dataSources: 'Authenticated Web, Account Management System, Financial Planning Tool',
+          architectureNotes: 'All PII must stay within their Fidelity-managed AEP sandbox. Offer Decisioning models run against anonymized profile attributes only. Data residency: US-East. Identity: Auth_ID as primary namespace, hashed email for cross-channel.',
+        },
+        architectureDiagrams: [],
+        risks: 'Compliance review pending on PII handling for Offer Decisioning. Identity resolution at 62% vs 80% target.',
+        nextActions: 'Deliver revised identity resolution architecture. Prep compliance documentation for Offer Decisioning data flows.',
+        notes: '',
+        updatedAt: Date.now() - 1000 * 60 * 60 * 3,
+        createdAt: Date.now() - 1000 * 60 * 60 * 24 * 30,
+      },
+    ];
+
+    /* ══════════════════════════════════════════════════════════════════
+       UTILITY FUNCTIONS
+       ══════════════════════════════════════════════════════════════════ */
+
+    const emptyAccount = () => ({
+      id: crypto.randomUUID(),
+      name: '',
+      vertical: '',
+      engagementType: 'AEP Implementation',
+      health: 'On Track',
+      currentPhase: 'Discovery',
+      scopeSummary: '',
+      componentsInScope: [],
+      timeline: [
+        { phase: 'Discovery', startDate: '', endDate: '', status: 'Upcoming' },
+        { phase: 'Design', startDate: '', endDate: '', status: 'Upcoming' },
+        { phase: 'Build', startDate: '', endDate: '', status: 'Upcoming' },
+        { phase: 'UAT', startDate: '', endDate: '', status: 'Upcoming' },
+        { phase: 'Go-Live', startDate: '', endDate: '', status: 'Upcoming' },
+      ],
+      resources: [],
+      solutionDesign: { schemas: '', datasets: '', audiences: '', journeys: '', destinations: '', dataSources: '', architectureNotes: '' },
+      architectureDiagrams: [],
+      risks: '',
+      nextActions: '',
+      notes: '',
+      updatedAt: Date.now(),
+      createdAt: Date.now(),
+    });
+
+    const formatDate = (d) => {
+      if (!d) return '';
+      return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    };
+
+    const formatTimestamp = (ts) => {
+      const diff = Date.now() - ts;
+      const mins = Math.floor(diff / 60000);
+      if (mins < 1) return 'just now';
+      if (mins < 60) return `${mins}m ago`;
+      const hrs = Math.floor(mins / 60);
+      if (hrs < 24) return `${hrs}h ago`;
+      const days = Math.floor(hrs / 24);
+      if (days < 7) return `${days}d ago`;
+      return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    };
+
+    /* ══════════════════════════════════════════════════════════════════
+       COMPONENTS
+       ══════════════════════════════════════════════════════════════════ */
+
+    /* ── Health Indicator Dot ─────────────────────────────────────── */
+    function HealthDot({ status, size = 8 }) {
+      return (
+        <span style={{
+          display: 'inline-block', width: size, height: size, borderRadius: '50%',
+          background: healthColor(status), flexShrink: 0,
+          boxShadow: `0 0 ${size}px ${healthColor(status)}40`,
+        }} />
+      );
+    }
+
+    /* ── Section Header ──────────────────────────────────────────── */
+    function SectionHeader({ title, children }) {
+      return (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <h3 style={{ fontWeight: 700, fontSize: 11, letterSpacing: '0.12em', color: THEME.textMuted, textTransform: 'uppercase' }}>{title}</h3>
+          {children}
+        </div>
+      );
+    }
+
+    /* ── Component Tag ───────────────────────────────────────────── */
+    function ComponentTag({ label, active, onClick }) {
+      return (
+        <button onClick={onClick} style={{
+          fontFamily: 'Inter, sans-serif', fontWeight: 500, fontSize: 10, letterSpacing: '0.04em',
+          padding: '4px 10px', borderRadius: 3, cursor: 'pointer', transition: 'all 0.15s',
+          background: active ? THEME.primary + '25' : 'transparent',
+          color: active ? THEME.accent : THEME.textMuted,
+          border: `1px solid ${active ? THEME.primary : THEME.border}`,
+        }}>
+          {label}
+        </button>
+      );
+    }
+
+    /* ── Timeline Row ────────────────────────────────────────────── */
+    function TimelineBar({ milestones }) {
+      if (!milestones || milestones.length === 0) return null;
+
+      const statusColor = (s) => {
+        switch(s) {
+          case 'Complete': return THEME.success;
+          case 'In Progress': return THEME.primary;
+          case 'Upcoming': return THEME.border;
+          case 'Delayed': return THEME.error;
+          default: return THEME.border;
+        }
+      };
+
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {milestones.map((m, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ width: 80, fontSize: 11, fontWeight: 500, color: THEME.textSecondary, flexShrink: 0 }}>{m.phase}</span>
+              <div style={{ flex: 1, height: 6, background: THEME.surfaceAlt, borderRadius: 3, overflow: 'hidden' }}>
+                <div style={{
+                  height: '100%', borderRadius: 3,
+                  width: m.status === 'Complete' ? '100%' : m.status === 'In Progress' ? '50%' : '0%',
+                  background: statusColor(m.status),
+                  transition: 'width 0.3s ease',
+                }} />
+              </div>
+              <span style={{ fontSize: 10, color: THEME.textMuted, width: 120, textAlign: 'right', flexShrink: 0 }}>
+                {formatDate(m.startDate)}{m.endDate ? ` - ${formatDate(m.endDate)}` : ''}
+              </span>
+              <span style={{
+                fontSize: 9, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase',
+                color: statusColor(m.status), width: 70, textAlign: 'right', flexShrink: 0,
+              }}>
+                {m.status}
+              </span>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    /* ── Resource Table ───────────────────────────────────────────── */
+    function ResourceTable({ resources }) {
+      if (!resources || resources.length === 0) {
+        return <p style={{ fontSize: 12, color: THEME.textMuted, fontStyle: 'italic' }}>No resources assigned yet.</p>;
+      }
+      return (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 80px', gap: '4px 12px' }}>
+          <span style={styles.tableHeader}>Role</span>
+          <span style={styles.tableHeader}>Name</span>
+          <span style={styles.tableHeader}>Allocation</span>
+          {resources.map((r, i) => (
+            <React.Fragment key={i}>
+              <span style={{ fontSize: 12, color: THEME.textSecondary }}>{r.role}</span>
+              <span style={{ fontSize: 12, color: r.name ? THEME.text : THEME.textMuted }}>{r.name || 'TBD'}</span>
+              <span style={{ fontSize: 12, color: THEME.accent, fontWeight: 500 }}>{r.allocation}</span>
+            </React.Fragment>
+          ))}
+        </div>
+      );
+    }
+
+    /* ── Solution Design Grid ────────────────────────────────────── */
+    function SolutionDesignGrid({ design, diagrams }) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            {DEFAULT_SOLUTION_SECTIONS.filter(s => s.key !== 'architectureNotes').map(cat => (
+              <div key={cat.key} style={{ background: THEME.surfaceAlt, borderRadius: 4, padding: '10px 12px', border: `1px solid ${THEME.border}` }}>
+                <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', color: THEME.accent, textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>
+                  {cat.label}
+                </span>
+                <p style={{ fontSize: 12, color: design[cat.key] ? THEME.textSecondary : THEME.textMuted, lineHeight: 1.5, fontStyle: design[cat.key] ? 'normal' : 'italic', whiteSpace: 'pre-wrap' }}>
+                  {design[cat.key] || 'Not defined'}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          {/* Architecture Notes — full width */}
+          <div style={{ background: THEME.surfaceAlt, borderRadius: 4, padding: '12px 14px', border: `1px solid ${THEME.primary}30` }}>
+            <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', color: THEME.primary, textTransform: 'uppercase', display: 'block', marginBottom: 8 }}>
+              Architecture Notes
+            </span>
+            <p style={{ fontSize: 12, color: design.architectureNotes ? THEME.textSecondary : THEME.textMuted, lineHeight: 1.7, whiteSpace: 'pre-wrap', fontStyle: design.architectureNotes ? 'normal' : 'italic' }}>
+              {design.architectureNotes || 'No architecture notes yet. Add implementation details, identity namespace config, data flow notes, etc.'}
+            </p>
+          </div>
+
+          {/* Architecture Diagrams */}
+          <div>
+            <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', color: THEME.accent, textTransform: 'uppercase', display: 'block', marginBottom: 8 }}>
+              Architecture Diagrams & References
+            </span>
+            {diagrams && diagrams.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {diagrams.map((d, i) => (
+                  <div key={i} style={{ background: THEME.surfaceAlt, borderRadius: 4, padding: '10px 12px', border: `1px solid ${THEME.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <span style={{ fontSize: 13, fontWeight: 500, color: THEME.text, display: 'block' }}>{d.name}</span>
+                      {d.description && <span style={{ fontSize: 11, color: THEME.textMuted }}>{d.description}</span>}
+                    </div>
+                    {d.url && (
+                      <a href={d.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: THEME.primary, textDecoration: 'none', fontWeight: 500, padding: '4px 8px', border: `1px solid ${THEME.primary}`, borderRadius: 3 }}>
+                        Open
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p style={{ fontSize: 12, color: THEME.textMuted, fontStyle: 'italic' }}>No diagrams linked. Add references to Lucidchart, Figma, Confluence, etc.</p>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    /* ══════════════════════════════════════════════════════════════════
+       ACCOUNT DETAIL PANEL (Right side)
+       ══════════════════════════════════════════════════════════════════ */
+    function AccountDetail({ account, onUpdate, onClose, engagementTypes }) {
+      const [activeTab, setActiveTab] = useState('overview');
+      const [editing, setEditing] = useState(false);
+      const [form, setForm] = useState({ ...account });
+
+      useEffect(() => {
+        setForm({ ...account });
+        setEditing(false);
+      }, [account.id]);
+
+      const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
+
+      const saveChanges = () => {
+        onUpdate({ ...form, updatedAt: Date.now() });
+        setEditing(false);
+      };
+
+      const cancelEdit = () => {
+        setForm({ ...account });
+        setEditing(false);
+      };
+
+      const tabs = [
+        { key: 'overview', label: 'Overview' },
+        { key: 'scope', label: 'Scope' },
+        { key: 'timeline', label: 'Timeline' },
+        { key: 'resources', label: 'Resources' },
+        { key: 'solution', label: 'Solution Design' },
+      ];
+
+      const toggleComponent = (comp) => {
+        const current = form.componentsInScope || [];
+        if (current.includes(comp)) {
+          set('componentsInScope', current.filter(c => c !== comp));
+        } else {
+          set('componentsInScope', [...current, comp]);
+        }
+      };
+
+      const updateTimeline = (idx, field, val) => {
+        const updated = [...form.timeline];
+        updated[idx] = { ...updated[idx], [field]: val };
+        set('timeline', updated);
+      };
+
+      const addTimelinePhase = () => {
+        set('timeline', [...form.timeline, { phase: '', startDate: '', endDate: '', status: 'Upcoming' }]);
+      };
+
+      const removeTimelinePhase = (idx) => {
+        set('timeline', form.timeline.filter((_, i) => i !== idx));
+      };
+
+      const updateResource = (idx, field, val) => {
+        const updated = [...form.resources];
+        updated[idx] = { ...updated[idx], [field]: val };
+        set('resources', updated);
+      };
+
+      const addResource = () => {
+        set('resources', [...form.resources, { role: '', name: '', allocation: '' }]);
+      };
+
+      const removeResource = (idx) => {
+        set('resources', form.resources.filter((_, i) => i !== idx));
+      };
+
+      const updateSolution = (key, val) => {
+        set('solutionDesign', { ...form.solutionDesign, [key]: val });
+      };
+
+      const addDiagram = () => {
+        set('architectureDiagrams', [...(form.architectureDiagrams || []), { name: '', url: '', description: '' }]);
+      };
+
+      const updateDiagram = (idx, field, val) => {
+        const updated = [...(form.architectureDiagrams || [])];
+        updated[idx] = { ...updated[idx], [field]: val };
+        set('architectureDiagrams', updated);
+      };
+
+      const removeDiagram = (idx) => {
+        set('architectureDiagrams', (form.architectureDiagrams || []).filter((_, i) => i !== idx));
+      };
+
+      return (
+        <div style={styles.detailPanel}>
+          {/* Detail Header */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, paddingBottom: 14, borderBottom: `1px solid ${THEME.border}` }}>
+            <div style={{ flex: 1 }}>
+              {editing ? (
+                <input value={form.name} onChange={e => set('name', e.target.value)} style={{ ...styles.input, fontSize: 18, fontWeight: 700, marginBottom: 6 }} placeholder="Account Name" />
+              ) : (
+                <h2 style={{ fontSize: 18, fontWeight: 700, color: THEME.text, marginBottom: 4 }}>{account.name}</h2>
+              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <HealthDot status={editing ? form.health : account.health} />
+                {editing ? (
+                  <select value={form.health} onChange={e => set('health', e.target.value)} style={styles.select}>
+                    {HEALTH_STATUSES.map(h => <option key={h} value={h}>{h}</option>)}
+                  </select>
+                ) : (
+                  <span style={{ fontSize: 11, fontWeight: 600, color: healthColor(account.health), textTransform: 'uppercase', letterSpacing: '0.06em' }}>{account.health}</span>
+                )}
+                <span style={{ color: THEME.border }}>|</span>
+                {editing ? (
+                  <select value={form.engagementType} onChange={e => set('engagementType', e.target.value)} style={styles.select}>
+                    {engagementTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                ) : (
+                  <span style={{ fontSize: 11, color: THEME.textMuted }}>{account.engagementType}</span>
+                )}
+                <span style={{ color: THEME.border }}>|</span>
+                {editing ? (
+                  <input value={form.vertical} onChange={e => set('vertical', e.target.value)} style={{ ...styles.input, width: 120, padding: '3px 8px', fontSize: 11 }} placeholder="Vertical" />
+                ) : (
+                  <span style={{ fontSize: 11, color: THEME.accent }}>{account.vertical}</span>
+                )}
+                <span style={{ color: THEME.border }}>|</span>
+                {editing ? (
+                  <select value={form.currentPhase} onChange={e => set('currentPhase', e.target.value)} style={styles.select}>
+                    {PHASES.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                ) : (
+                  <span style={{ fontSize: 11, fontWeight: 500, color: THEME.primary }}>{account.currentPhase} Phase</span>
+                )}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+              {editing ? (
+                <>
+                  <button style={styles.cancelBtn} onClick={cancelEdit}>Cancel</button>
+                  <button style={styles.saveBtn} onClick={saveChanges}>Save</button>
+                </>
+              ) : (
+                <button style={styles.editBtn} onClick={() => setEditing(true)}>Edit</button>
+              )}
+              <button style={{ ...styles.iconBtn, fontSize: 16 }} onClick={onClose}>✕</button>
+            </div>
+          </div>
+
+          {/* Tabs */}
+          <div style={styles.tabBar}>
+            {tabs.map(t => (
+              <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
+                ...styles.tabBtn,
+                color: activeTab === t.key ? THEME.primary : THEME.textMuted,
+                borderBottom: activeTab === t.key ? `2px solid ${THEME.primary}` : '2px solid transparent',
+              }}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Tab Content */}
+          <div style={{ flex: 1, overflowY: 'auto', paddingTop: 16 }}>
+            {/* OVERVIEW TAB */}
+            {activeTab === 'overview' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20, animation: 'fadeIn 0.2s ease' }}>
+                <div>
+                  <SectionHeader title="Scope Summary" />
+                  {editing ? (
+                    <textarea value={form.scopeSummary} onChange={e => set('scopeSummary', e.target.value)}
+                      style={{ ...styles.input, minHeight: 80, resize: 'vertical' }} placeholder="High-level scope description..." />
+                  ) : (
+                    <p style={{ fontSize: 13, color: THEME.textSecondary, lineHeight: 1.6 }}>{account.scopeSummary || 'No scope summary defined.'}</p>
+                  )}
+                </div>
+
+                <div>
+                  <SectionHeader title="Components in Scope" />
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {editing ? (
+                      AEP_COMPONENTS.map(c => (
+                        <ComponentTag key={c} label={c} active={form.componentsInScope.includes(c)} onClick={() => toggleComponent(c)} />
+                      ))
+                    ) : (
+                      account.componentsInScope.length > 0 ? (
+                        account.componentsInScope.map(c => <ComponentTag key={c} label={c} active={true} onClick={() => {}} />)
+                      ) : (
+                        <span style={{ fontSize: 12, color: THEME.textMuted, fontStyle: 'italic' }}>No components selected.</span>
+                      )
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <SectionHeader title="Risks / Issues" />
+                  {editing ? (
+                    <textarea value={form.risks} onChange={e => set('risks', e.target.value)}
+                      style={{ ...styles.input, minHeight: 60, resize: 'vertical' }} placeholder="Active risks, blockers, dependencies..." />
+                  ) : (
+                    <p style={{ fontSize: 13, color: form.risks ? '#F5A623' : THEME.textMuted, lineHeight: 1.6, fontStyle: form.risks ? 'normal' : 'italic' }}>
+                      {account.risks || 'No active risks.'}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <SectionHeader title="Next Actions" />
+                  {editing ? (
+                    <textarea value={form.nextActions} onChange={e => set('nextActions', e.target.value)}
+                      style={{ ...styles.input, minHeight: 50, resize: 'vertical' }} placeholder="Priority next steps..." />
+                  ) : (
+                    <p style={{ fontSize: 13, color: THEME.text, lineHeight: 1.6 }}>{account.nextActions || 'No next actions defined.'}</p>
+                  )}
+                </div>
+
+                <div>
+                  <SectionHeader title="Notes" />
+                  {editing ? (
+                    <textarea value={form.notes} onChange={e => set('notes', e.target.value)}
+                      style={{ ...styles.input, minHeight: 60, resize: 'vertical' }} placeholder="Internal notes, context, relationship details..." />
+                  ) : (
+                    <p style={{ fontSize: 13, color: THEME.textSecondary, lineHeight: 1.6, fontStyle: account.notes ? 'normal' : 'italic' }}>
+                      {account.notes || 'No notes.'}
+                    </p>
+                  )}
+                </div>
+
+                <div style={{ fontSize: 10, color: THEME.textMuted, borderTop: `1px solid ${THEME.border}`, paddingTop: 10 }}>
+                  Last updated {formatTimestamp(account.updatedAt)}
+                </div>
+              </div>
+            )}
+
+            {/* SCOPE TAB */}
+            {activeTab === 'scope' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20, animation: 'fadeIn 0.2s ease' }}>
+                <div>
+                  <SectionHeader title="Engagement Type" />
+                  {editing ? (
+                    <select value={form.engagementType} onChange={e => set('engagementType', e.target.value)} style={{ ...styles.select, width: '100%' }}>
+                      {engagementTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  ) : (
+                    <span style={{ fontSize: 14, fontWeight: 600, color: THEME.primary }}>{account.engagementType}</span>
+                  )}
+                </div>
+
+                <div>
+                  <SectionHeader title="Scope Summary" />
+                  {editing ? (
+                    <textarea value={form.scopeSummary} onChange={e => set('scopeSummary', e.target.value)}
+                      style={{ ...styles.input, minHeight: 100, resize: 'vertical' }} placeholder="Detailed scope description..." />
+                  ) : (
+                    <p style={{ fontSize: 13, color: THEME.textSecondary, lineHeight: 1.6 }}>{account.scopeSummary || 'No scope summary.'}</p>
+                  )}
+                </div>
+
+                <div>
+                  <SectionHeader title="AEP Components in Scope" />
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {editing ? (
+                      AEP_COMPONENTS.map(c => (
+                        <ComponentTag key={c} label={c} active={form.componentsInScope.includes(c)} onClick={() => toggleComponent(c)} />
+                      ))
+                    ) : (
+                      account.componentsInScope.length > 0 ? (
+                        account.componentsInScope.map(c => <ComponentTag key={c} label={c} active={true} onClick={() => {}} />)
+                      ) : (
+                        <span style={{ fontSize: 12, color: THEME.textMuted, fontStyle: 'italic' }}>No components defined.</span>
+                      )
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <SectionHeader title="Current Phase" />
+                  {editing ? (
+                    <select value={form.currentPhase} onChange={e => set('currentPhase', e.target.value)} style={{ ...styles.select, width: '100%' }}>
+                      {PHASES.map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  ) : (
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {PHASES.map(p => (
+                        <span key={p} style={{
+                          fontSize: 11, fontWeight: 600, padding: '4px 12px', borderRadius: 3, letterSpacing: '0.04em',
+                          background: p === account.currentPhase ? THEME.primary : 'transparent',
+                          color: p === account.currentPhase ? THEME.text : THEME.textMuted,
+                          border: `1px solid ${p === account.currentPhase ? THEME.primary : THEME.border}`,
+                        }}>
+                          {p}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* TIMELINE TAB */}
+            {activeTab === 'timeline' && (
+              <div style={{ animation: 'fadeIn 0.2s ease' }}>
+                <SectionHeader title="Project Timeline">
+                  {editing && (
+                    <button onClick={addTimelinePhase} style={{ ...styles.smallBtn, background: THEME.primary }}>+ Phase</button>
+                  )}
+                </SectionHeader>
+                {editing ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {form.timeline.map((m, i) => (
+                      <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto auto', gap: 8, alignItems: 'center' }}>
+                        <input value={m.phase} onChange={e => updateTimeline(i, 'phase', e.target.value)} style={styles.input} placeholder="Phase" />
+                        <input type="date" value={m.startDate} onChange={e => updateTimeline(i, 'startDate', e.target.value)} style={{ ...styles.input, colorScheme: 'dark' }} />
+                        <input type="date" value={m.endDate} onChange={e => updateTimeline(i, 'endDate', e.target.value)} style={{ ...styles.input, colorScheme: 'dark' }} />
+                        <select value={m.status} onChange={e => updateTimeline(i, 'status', e.target.value)} style={{ ...styles.select, width: 100 }}>
+                          {['Upcoming', 'In Progress', 'Complete', 'Delayed'].map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                        <button onClick={() => removeTimelinePhase(i)} style={{ ...styles.iconBtn, color: THEME.error }}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <TimelineBar milestones={account.timeline} />
+                )}
+              </div>
+            )}
+
+            {/* RESOURCES TAB */}
+            {activeTab === 'resources' && (
+              <div style={{ animation: 'fadeIn 0.2s ease' }}>
+                <SectionHeader title="Team Structure">
+                  {editing && (
+                    <button onClick={addResource} style={{ ...styles.smallBtn, background: THEME.primary }}>+ Resource</button>
+                  )}
+                </SectionHeader>
+                {editing ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {form.resources.map((r, i) => (
+                      <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 80px auto', gap: 8, alignItems: 'center' }}>
+                        <select value={r.role} onChange={e => updateResource(i, 'role', e.target.value)} style={{ ...styles.select, width: '100%' }}>
+                          <option value="">Select Role</option>
+                          {ROLES.map(role => <option key={role} value={role}>{role}</option>)}
+                        </select>
+                        <input value={r.name} onChange={e => updateResource(i, 'name', e.target.value)} style={styles.input} placeholder="Name" />
+                        <input value={r.allocation} onChange={e => updateResource(i, 'allocation', e.target.value)} style={styles.input} placeholder="%" />
+                        <button onClick={() => removeResource(i)} style={{ ...styles.iconBtn, color: THEME.error }}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <ResourceTable resources={account.resources} />
+                )}
+              </div>
+            )}
+
+            {/* SOLUTION DESIGN TAB */}
+            {activeTab === 'solution' && (
+              <div style={{ animation: 'fadeIn 0.2s ease' }}>
+                <SectionHeader title="Solution Architecture" />
+                {editing ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    {/* Core solution sections */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                      {DEFAULT_SOLUTION_SECTIONS.filter(s => s.key !== 'architectureNotes').map(cat => (
+                        <div key={cat.key}>
+                          <label style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', color: THEME.accent, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                            {cat.label}
+                          </label>
+                          <textarea value={form.solutionDesign[cat.key] || ''} onChange={e => updateSolution(cat.key, e.target.value)}
+                            style={{ ...styles.input, minHeight: 60, resize: 'vertical' }} placeholder={`Enter ${cat.label.toLowerCase()}...`} />
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Architecture Notes - full width free-form */}
+                    <div>
+                      <label style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', color: THEME.primary, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                        Architecture Notes
+                      </label>
+                      <textarea value={form.solutionDesign.architectureNotes || ''} onChange={e => updateSolution('architectureNotes', e.target.value)}
+                        style={{ ...styles.input, minHeight: 100, resize: 'vertical' }} placeholder="Free-form notes on architecture decisions, identity namespace config, data flow details, integration patterns, internal data source details..." />
+                    </div>
+
+                    {/* Architecture Diagrams */}
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                        <label style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', color: THEME.accent, textTransform: 'uppercase' }}>
+                          Architecture Diagrams & References
+                        </label>
+                        <button onClick={addDiagram} style={{ ...styles.smallBtn, background: THEME.primary }}>+ Diagram</button>
+                      </div>
+                      {(form.architectureDiagrams || []).map((d, i) => (
+                        <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, marginBottom: 8, alignItems: 'start' }}>
+                          <div>
+                            <input value={d.name} onChange={e => updateDiagram(i, 'name', e.target.value)} style={styles.input} placeholder="Diagram name" />
+                            <input value={d.description} onChange={e => updateDiagram(i, 'description', e.target.value)} style={{ ...styles.input, fontSize: 11 }} placeholder="Description" />
+                          </div>
+                          <input value={d.url} onChange={e => updateDiagram(i, 'url', e.target.value)} style={styles.input} placeholder="URL (Lucidchart, Figma, Confluence...)" />
+                          <button onClick={() => removeDiagram(i)} style={{ ...styles.iconBtn, color: THEME.error, marginTop: 8 }}>✕</button>
+                        </div>
+                      ))}
+                      {(!form.architectureDiagrams || form.architectureDiagrams.length === 0) && (
+                        <p style={{ fontSize: 11, color: THEME.textMuted, fontStyle: 'italic' }}>No diagrams added yet.</p>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <SolutionDesignGrid design={account.solutionDesign} diagrams={account.architectureDiagrams} />
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    /* ══════════════════════════════════════════════════════════════════
+       NEW ACCOUNT MODAL
+       ══════════════════════════════════════════════════════════════════ */
+    function NewAccountModal({ onSave, onClose, engagementTypes, onAddEngagementType }) {
+      const [form, setForm] = useState(emptyAccount());
+      const nameRef = useRef(null);
+
+      useEffect(() => { nameRef.current?.focus(); }, []);
+
+      const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
+
+      const handleSave = () => {
+        if (!form.name.trim()) return;
+        onSave({ ...form, name: form.name.trim(), updatedAt: Date.now(), createdAt: Date.now() });
+      };
+
+      return (
+        <div style={styles.overlay} onClick={onClose}>
+          <div style={styles.modal} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <span style={{ fontWeight: 700, fontSize: 13, letterSpacing: '0.1em', color: THEME.text }}>NEW ACCOUNT</span>
+              <button style={{ background: 'none', border: 'none', color: THEME.textMuted, fontSize: 16, cursor: 'pointer' }} onClick={onClose}>✕</button>
+            </div>
+
+            <label style={styles.label}>Account Name</label>
+            <input ref={nameRef} value={form.name} onChange={e => set('name', e.target.value)} style={styles.input} placeholder="Client / Account name" />
+
+            <label style={styles.label}>Vertical / Industry</label>
+            <input value={form.vertical} onChange={e => set('vertical', e.target.value)} style={styles.input} placeholder="e.g. Retail, Financial Services, Healthcare" />
+
+            <label style={styles.label}>Engagement Type</label>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+              <select value={form.engagementType} onChange={e => {
+                if (e.target.value === '__custom__') {
+                  const custom = prompt('Enter new engagement type:');
+                  if (custom && custom.trim()) {
+                    onAddEngagementType(custom.trim());
+                    set('engagementType', custom.trim());
+                  }
+                } else {
+                  set('engagementType', e.target.value);
+                }
+              }} style={{ ...styles.select, flex: 1 }}>
+                {engagementTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                <option value="__custom__">+ Add Custom Type...</option>
+              </select>
+            </div>
+
+            <label style={styles.label}>Health Status</label>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+              {HEALTH_STATUSES.map(h => (
+                <button key={h} onClick={() => set('health', h)} style={{
+                  fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 10, letterSpacing: '0.06em',
+                  padding: '5px 12px', borderRadius: 3, cursor: 'pointer', textTransform: 'uppercase',
+                  background: form.health === h ? healthColor(h) + '30' : 'transparent',
+                  color: form.health === h ? healthColor(h) : THEME.textMuted,
+                  border: `1px solid ${form.health === h ? healthColor(h) : THEME.border}`,
+                  transition: 'all 0.15s',
+                }}>
+                  {h}
+                </button>
+              ))}
+            </div>
+
+            <label style={styles.label}>Current Phase</label>
+            <select value={form.currentPhase} onChange={e => set('currentPhase', e.target.value)} style={{ ...styles.select, width: '100%', marginBottom: 12 }}>
+              {PHASES.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+
+            <label style={styles.label}>Scope Summary</label>
+            <textarea value={form.scopeSummary} onChange={e => set('scopeSummary', e.target.value)}
+              style={{ ...styles.input, minHeight: 60, resize: 'vertical' }} placeholder="Brief description of the engagement scope..." />
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
+              <button style={styles.cancelBtn} onClick={onClose}>Cancel</button>
+              <button style={styles.saveBtn} onClick={handleSave} disabled={!form.name.trim()}>Create Account</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ══════════════════════════════════════════════════════════════════
+       ACCOUNT LIST CARD (Left sidebar)
+       ══════════════════════════════════════════════════════════════════ */
+    function AccountCard({ account, selected, onClick }) {
+      const [hovered, setHovered] = useState(false);
+      return (
+        <div
+          onClick={onClick}
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
+          style={{
+            background: selected ? THEME.card : hovered ? THEME.surfaceAlt : THEME.surface,
+            border: `1px solid ${selected ? THEME.primary : hovered ? THEME.borderLight : THEME.border}`,
+            borderRadius: 5, padding: '12px 14px', cursor: 'pointer',
+            transition: 'all 0.15s ease',
+            borderLeft: `3px solid ${healthColor(account.health)}`,
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+            <span style={{ fontWeight: 600, fontSize: 14, color: THEME.text }}>{account.name}</span>
+            <HealthDot status={account.health} />
+          </div>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
+            <span style={{ fontSize: 10, color: THEME.accent, fontWeight: 500, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{account.vertical}</span>
+            <span style={{ color: THEME.border, fontSize: 10 }}>|</span>
+            <span style={{ fontSize: 10, color: THEME.textMuted }}>{account.engagementType}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 10, color: THEME.primary, fontWeight: 500 }}>{account.currentPhase}</span>
+            <span style={{ fontSize: 9, color: THEME.textMuted }}>{formatTimestamp(account.updatedAt)}</span>
+          </div>
+        </div>
+      );
+    }
+
+    /* ══════════════════════════════════════════════════════════════════
+       MAIN APP
+       ══════════════════════════════════════════════════════════════════ */
+    function App() {
+      const [accounts, setAccounts] = useState(() => {
+        try {
+          const stored = localStorage.getItem(STORAGE_KEY);
+          if (stored) { const parsed = JSON.parse(stored); if (Array.isArray(parsed) && parsed.length) return parsed; }
+        } catch {}
+        return SEED_DATA;
+      });
+
+      const [config, setConfig] = useState(loadConfig);
+      const engagementTypes = config.engagementTypes || DEFAULT_ENGAGEMENT_TYPES;
+
+      const addEngagementType = (type) => {
+        if (!engagementTypes.includes(type)) {
+          const updated = { ...config, engagementTypes: [...engagementTypes, type] };
+          setConfig(updated);
+          saveConfig(updated);
+        }
+      };
+
+      const [selectedId, setSelectedId] = useState(null);
+      const [showNewModal, setShowNewModal] = useState(false);
+      const [searchTerm, setSearchTerm] = useState('');
+      const [filterHealth, setFilterHealth] = useState('All');
+
+      useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(accounts)); }, [accounts]);
+
+      const selectedAccount = useMemo(() => accounts.find(a => a.id === selectedId), [accounts, selectedId]);
+
+      const filtered = useMemo(() => {
+        let result = accounts;
+        if (filterHealth !== 'All') result = result.filter(a => a.health === filterHealth);
+        if (searchTerm) {
+          const term = searchTerm.toLowerCase();
+          result = result.filter(a =>
+            a.name.toLowerCase().includes(term) ||
+            a.vertical.toLowerCase().includes(term) ||
+            a.engagementType.toLowerCase().includes(term)
+          );
+        }
+        return result.sort((a, b) => {
+          const order = { 'Off Track': 0, 'At Risk': 1, 'On Track': 2, 'On Hold': 3, 'Complete': 4 };
+          return (order[a.health] ?? 9) - (order[b.health] ?? 9);
+        });
+      }, [accounts, filterHealth, searchTerm]);
+
+      const addAccount = (acc) => {
+        setAccounts(prev => [acc, ...prev]);
+        setSelectedId(acc.id);
+        setShowNewModal(false);
+      };
+
+      const updateAccount = (acc) => {
+        setAccounts(prev => prev.map(a => a.id === acc.id ? acc : a));
+      };
+
+      const deleteAccount = (id) => {
+        if (!confirm('Remove this account from the dashboard?')) return;
+        setAccounts(prev => prev.filter(a => a.id !== id));
+        if (selectedId === id) setSelectedId(null);
+      };
+
+      const healthCounts = accounts.reduce((acc, a) => { acc[a.health] = (acc[a.health] || 0) + 1; return acc; }, {});
+
+      return (
+        <div style={styles.appRoot}>
+          {/* ── Left Sidebar ── */}
+          <div style={styles.sidebar}>
+            {/* Header */}
+            <div style={{ padding: '20px 16px 12px', borderBottom: `1px solid ${THEME.border}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                <div style={{ width: 4, height: 18, background: THEME.primary, borderRadius: 2 }} />
+                <h1 style={{ fontWeight: 800, fontSize: 15, letterSpacing: '0.12em', color: THEME.text, textTransform: 'uppercase' }}>
+                  AEP Dashboard
+                </h1>
+              </div>
+              <span style={{ fontSize: 10, color: THEME.textMuted, fontWeight: 300, marginLeft: 12 }}>
+                {accounts.length} account{accounts.length !== 1 ? 's' : ''} tracked
+              </span>
+            </div>
+
+            {/* Search */}
+            <div style={{ padding: '12px 16px 8px' }}>
+              <input
+                value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+                placeholder="Search accounts..."
+                style={{ ...styles.input, background: THEME.surfaceAlt, fontSize: 12 }}
+              />
+            </div>
+
+            {/* Health Filters */}
+            <div style={{ padding: '0 16px 10px', display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+              {['All', ...HEALTH_STATUSES].map(h => {
+                const count = h === 'All' ? accounts.length : (healthCounts[h] || 0);
+                const active = filterHealth === h;
+                return (
+                  <button key={h} onClick={() => setFilterHealth(h)} style={{
+                    fontFamily: 'Inter, sans-serif', fontWeight: 500, fontSize: 9, letterSpacing: '0.04em',
+                    padding: '3px 8px', borderRadius: 3, cursor: 'pointer', transition: 'all 0.15s',
+                    textTransform: 'uppercase',
+                    background: active ? (h === 'All' ? THEME.primary : healthColor(h) + '30') : 'transparent',
+                    color: active ? (h === 'All' ? THEME.text : healthColor(h)) : THEME.textMuted,
+                    border: `1px solid ${active ? (h === 'All' ? THEME.primary : healthColor(h)) : THEME.border}`,
+                  }}>
+                    {h} {count > 0 && <span style={{ opacity: 0.7 }}>({count})</span>}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Account List */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {filtered.map(a => (
+                <AccountCard key={a.id} account={a} selected={a.id === selectedId} onClick={() => setSelectedId(a.id)} />
+              ))}
+              {filtered.length === 0 && (
+                <div style={{ textAlign: 'center', padding: 30, color: THEME.textMuted, fontSize: 12 }}>
+                  {accounts.length === 0 ? 'No accounts yet.' : 'No matches.'}
+                </div>
+              )}
+            </div>
+
+            {/* Add Button */}
+            <div style={{ padding: 16, borderTop: `1px solid ${THEME.border}` }}>
+              <button onClick={() => setShowNewModal(true)} style={styles.addBtn}>+ New Account</button>
+            </div>
+          </div>
+
+          {/* ── Right Detail Panel ── */}
+          <div style={styles.mainArea}>
+            {selectedAccount ? (
+              <AccountDetail
+                account={selectedAccount}
+                onUpdate={updateAccount}
+                onClose={() => setSelectedId(null)}
+                engagementTypes={engagementTypes}
+              />
+            ) : (
+              <div style={styles.emptyState}>
+                <div style={{ width: 4, height: 40, background: THEME.primary, borderRadius: 2, marginBottom: 16 }} />
+                <h2 style={{ fontSize: 16, fontWeight: 700, color: THEME.textMuted, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>
+                  Select an Account
+                </h2>
+                <p style={{ fontSize: 13, color: THEME.textMuted, maxWidth: 340, textAlign: 'center', lineHeight: 1.6 }}>
+                  Choose an account from the sidebar to view scope, timelines, resourcing, and solution design details.
+                </p>
+
+                {/* Quick Stats */}
+                <div style={{ display: 'flex', gap: 16, marginTop: 30 }}>
+                  {[
+                    { label: 'Total', count: accounts.length, color: THEME.text },
+                    { label: 'At Risk', count: healthCounts['At Risk'] || 0, color: '#F5A623' },
+                    { label: 'Off Track', count: healthCounts['Off Track'] || 0, color: THEME.error },
+                    { label: 'On Track', count: healthCounts['On Track'] || 0, color: THEME.success },
+                  ].map(s => (
+                    <div key={s.label} style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 24, fontWeight: 700, color: s.color }}>{s.count}</div>
+                      <div style={{ fontSize: 9, fontWeight: 500, color: THEME.textMuted, letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 2 }}>{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ── New Account Modal ── */}
+          {showNewModal && <NewAccountModal onSave={addAccount} onClose={() => setShowNewModal(false)} engagementTypes={engagementTypes} onAddEngagementType={addEngagementType} />}
+        </div>
+      );
+    }
+
+    /* ══════════════════════════════════════════════════════════════════
+       STYLES
+       ══════════════════════════════════════════════════════════════════ */
+    const styles = {
+      appRoot: {
+        display: 'flex',
+        height: '100vh',
+        fontFamily: 'Inter, Arial, sans-serif',
+        color: THEME.text,
+        background: THEME.bg,
+      },
+      sidebar: {
+        width: 320,
+        minWidth: 320,
+        background: THEME.surface,
+        borderRight: `1px solid ${THEME.border}`,
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100vh',
+        overflow: 'hidden',
+      },
+      mainArea: {
+        flex: 1,
+        display: 'flex',
+        height: '100vh',
+        overflow: 'hidden',
+      },
+      detailPanel: {
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        padding: '20px 28px',
+        overflow: 'hidden',
+        height: '100vh',
+      },
+      emptyState: {
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        opacity: 0.6,
+      },
+      addBtn: {
+        fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 12,
+        background: THEME.primary, color: THEME.text, border: 'none',
+        borderRadius: 4, padding: '10px 0', cursor: 'pointer',
+        letterSpacing: '0.04em', width: '100%',
+        transition: 'background 0.15s',
+      },
+      tabBar: {
+        display: 'flex', gap: 0, borderBottom: `1px solid ${THEME.border}`, marginBottom: 0,
+      },
+      tabBtn: {
+        fontFamily: 'Inter, sans-serif', fontWeight: 500, fontSize: 11,
+        letterSpacing: '0.06em', textTransform: 'uppercase',
+        background: 'none', border: 'none', cursor: 'pointer',
+        padding: '8px 16px', transition: 'all 0.15s',
+      },
+      input: {
+        fontFamily: 'Inter, sans-serif', fontWeight: 400, fontSize: 13,
+        color: THEME.text, background: THEME.surface,
+        border: `1px solid ${THEME.border}`, borderRadius: 4,
+        padding: '8px 10px', width: '100%', outline: 'none',
+        display: 'block', marginBottom: 4,
+      },
+      select: {
+        fontFamily: 'Inter, sans-serif', fontWeight: 400, fontSize: 11,
+        color: THEME.text, background: THEME.surface,
+        border: `1px solid ${THEME.border}`, borderRadius: 4,
+        padding: '4px 8px', outline: 'none', cursor: 'pointer',
+        colorScheme: 'dark',
+      },
+      label: {
+        fontFamily: 'Inter, sans-serif', fontWeight: 500, fontSize: 10,
+        letterSpacing: '0.08em', color: THEME.textMuted, textTransform: 'uppercase',
+        display: 'block', marginBottom: 4, marginTop: 12,
+      },
+      tableHeader: {
+        fontSize: 9, fontWeight: 600, letterSpacing: '0.1em',
+        color: THEME.textMuted, textTransform: 'uppercase', paddingBottom: 6,
+        borderBottom: `1px solid ${THEME.border}`,
+      },
+      editBtn: {
+        fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 11,
+        background: 'transparent', color: THEME.primary,
+        border: `1px solid ${THEME.primary}`, borderRadius: 4,
+        padding: '6px 14px', cursor: 'pointer', letterSpacing: '0.04em',
+      },
+      saveBtn: {
+        fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 12,
+        background: THEME.primary, color: THEME.text, border: 'none',
+        borderRadius: 4, padding: '8px 20px', cursor: 'pointer',
+      },
+      cancelBtn: {
+        fontFamily: 'Inter, sans-serif', fontWeight: 500, fontSize: 12,
+        background: 'none', border: `1px solid ${THEME.border}`,
+        color: THEME.textSecondary, borderRadius: 4, padding: '8px 16px', cursor: 'pointer',
+      },
+      smallBtn: {
+        fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 10,
+        color: THEME.text, border: 'none', borderRadius: 3,
+        padding: '4px 10px', cursor: 'pointer', letterSpacing: '0.04em',
+      },
+      iconBtn: {
+        background: 'none', border: 'none', color: THEME.textSecondary,
+        cursor: 'pointer', fontSize: 14, padding: '2px 4px', opacity: 0.6,
+        transition: 'opacity 0.15s',
+      },
+      overlay: {
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)',
+        display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000,
+      },
+      modal: {
+        background: THEME.surfaceAlt, border: `1px solid ${THEME.border}`,
+        borderRadius: 6, padding: '24px 28px', width: '100%', maxWidth: 520,
+        maxHeight: '90vh', overflowY: 'auto',
+      },
+    };
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

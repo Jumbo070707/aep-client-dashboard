@@ -241,6 +241,207 @@
     };
 
     /* ══════════════════════════════════════════════════════════════════
+       DOCUMENT PARSER — extracts AEP account fields from free text
+       ══════════════════════════════════════════════════════════════════ */
+
+    const COMPONENT_KEYWORDS = {
+      'Real-Time CDP': [/real[- ]?time\s*cdp/i, /rt[- ]?cdp/i, /customer\s*data\s*platform/i],
+      'Journey Optimizer (AJO)': [/journey\s*optimi[sz]er/i, /\bajo\b/i],
+      'Customer Journey Analytics (CJA)': [/customer\s*journey\s*analytics/i, /\bcja\b/i],
+      'Offer Decisioning': [/offer\s*decisioning/i, /decision\s*management/i, /ode/i],
+      'Data Collection / Web SDK': [/web\s*sdk/i, /data\s*collection/i, /alloy/i, /edge\s*network/i],
+      'Mobile SDK': [/mobile\s*sdk/i, /aep\s*edge.*mobile/i],
+      'Destinations': [/destinations?\b/i],
+      'Identity Service': [/identity\s*(service|resolution|graph|stitching)/i, /ecid/i, /namespace/i],
+      'Data Hygiene': [/data\s*hygiene/i, /data\s*lifecycle/i],
+      'Federated Audience Composition': [/federated\s*audience/i, /fac\b/i],
+      'Adobe Target': [/adobe\s*target/i, /\btarget\b.*personali/i],
+      'Marketo Engage': [/marketo/i],
+    };
+
+    const ROLE_KEYWORDS = {
+      'Solution Architect': [/solution\s*architect/i, /\bsa\b/i],
+      'Technical Lead': [/technical?\s*lead/i, /tech\s*lead/i],
+      'Data Engineer': [/data\s*engineer/i],
+      'Implementation Consultant': [/implementation\s*consultant/i, /impl?\s*consultant/i],
+      'Project Manager': [/project\s*manager/i, /\bpm\b/i, /program\s*manager/i],
+      'Analytics Engineer': [/analytics?\s*engineer/i],
+      'QA Engineer': [/qa\s*engineer/i, /quality\s*assurance/i],
+      'Client Lead / Sponsor': [/client\s*(lead|sponsor)/i, /executive\s*sponsor/i, /account\s*lead/i],
+    };
+
+    const VERTICAL_KEYWORDS = {
+      'Retail': [/\bretail\b/i, /e[- ]?commerce/i, /merchandis/i],
+      'Financial Services': [/financ/i, /banking/i, /wealth/i, /insurance/i, /finserv/i],
+      'Healthcare': [/health\s*care/i, /healthcare/i, /pharma/i, /medical/i],
+      'Technology': [/\btech\b/i, /software/i, /saas\b/i],
+      'Media & Entertainment': [/media/i, /entertainment/i, /streaming/i, /broadcast/i],
+      'Telecom': [/telecom/i, /wireless/i, /mobile\s*operator/i],
+      'Travel & Hospitality': [/travel/i, /hospitality/i, /hotel/i, /airline/i],
+      'Manufacturing': [/manufactur/i, /industrial/i],
+      'Automotive': [/automotive/i, /vehicle/i],
+      'Education': [/education/i, /university/i, /academic/i],
+    };
+
+    const DATE_PATTERNS = [
+      /(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/,   // 2026-03-15
+      /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/,    // 03/15/2026
+      /(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\.?\s+(\d{1,2}),?\s*(\d{4})/i,  // March 15, 2026
+      /(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\.?\s+(\d{4})/i,     // 15 March 2026
+    ];
+
+    const MONTH_MAP = { jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06', jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12' };
+
+    function parseDate(str) {
+      if (!str) return '';
+      for (const pat of DATE_PATTERNS) {
+        const m = str.match(pat);
+        if (m) {
+          if (/^\d{4}$/.test(m[1])) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+          if (/^\d{4}$/.test(m[3]) && /^\d{1,2}$/.test(m[1])) return `${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
+          if (/^[a-z]/i.test(m[1])) return `${m[3]}-${MONTH_MAP[m[1].slice(0,3).toLowerCase()]}-${m[2].padStart(2,'0')}`;
+          if (/^[a-z]/i.test(m[2])) return `${m[3]}-${MONTH_MAP[m[2].slice(0,3).toLowerCase()]}-${m[1].padStart(2,'0')}`;
+        }
+      }
+      return '';
+    }
+
+    function extractDatesNear(text, keyword) {
+      const lines = text.split('\n');
+      const dates = [];
+      for (let i = 0; i < lines.length; i++) {
+        if (new RegExp(keyword, 'i').test(lines[i])) {
+          const window = lines.slice(Math.max(0, i - 1), i + 3).join(' ');
+          for (const pat of DATE_PATTERNS) {
+            const matches = window.matchAll(new RegExp(pat, 'gi'));
+            for (const m of matches) dates.push(parseDate(m[0]));
+          }
+        }
+      }
+      return dates.filter(Boolean);
+    }
+
+    function parseDocument(text) {
+      const result = {
+        name: '',
+        vertical: '',
+        engagementType: '',
+        scopeSummary: '',
+        componentsInScope: [],
+        timeline: [],
+        resources: [],
+        solutionDesign: { schemas: '', datasets: '', audiences: '', journeys: '', destinations: '', dataSources: '', architectureNotes: '' },
+        risks: '',
+        confidence: {},
+      };
+
+      const lower = text.toLowerCase();
+
+      // --- Engagement type ---
+      if (/implementation/i.test(text) && /aep|adobe\s*experience\s*platform/i.test(text)) {
+        result.engagementType = 'AEP Implementation';
+        result.confidence.engagementType = 'high';
+      } else if (/optimi[sz]ation/i.test(text) && /aep|adobe\s*experience\s*platform/i.test(text)) {
+        result.engagementType = 'AEP Optimization';
+        result.confidence.engagementType = 'high';
+      } else if (/migration/i.test(text)) {
+        result.engagementType = 'Migration';
+        result.confidence.engagementType = 'medium';
+      }
+
+      // --- Components in scope ---
+      for (const [comp, patterns] of Object.entries(COMPONENT_KEYWORDS)) {
+        if (patterns.some(p => p.test(text))) {
+          result.componentsInScope.push(comp);
+        }
+      }
+
+      // --- Vertical ---
+      for (const [vert, patterns] of Object.entries(VERTICAL_KEYWORDS)) {
+        if (patterns.some(p => p.test(text))) {
+          result.vertical = vert;
+          break;
+        }
+      }
+
+      // --- Resources ---
+      const textLines = text.split('\n');
+      for (const [role, patterns] of Object.entries(ROLE_KEYWORDS)) {
+        let found = false;
+        for (const pat of patterns) {
+          for (const line of textLines) {
+            if (!pat.test(line)) continue;
+            // Match "Role: Name" or "Name - Role" on this single line
+            const afterColon = line.match(new RegExp(`${pat.source}\\s*[–\\-—:]\\s*(.+)`, 'i'));
+            const beforeColon = line.match(new RegExp(`(.+?)\\s*[–\\-—:]\\s*${pat.source}`, 'i'));
+            const name = ((afterColon && afterColon[1]) || (beforeColon && beforeColon[1]) || '').trim().replace(/^[\-\*•]\s*/, '');
+            result.resources.push({ role, name: name.length > 2 && name.length < 35 ? name : '', allocation: '' });
+            found = true;
+            break;
+          }
+          if (found) break;
+        }
+      }
+
+      // --- Timeline phases ---
+      for (const phase of PHASES) {
+        const dates = extractDatesNear(text, phase);
+        if (dates.length >= 2) {
+          result.timeline.push({ phase, startDate: dates[0], endDate: dates[1], status: 'Upcoming' });
+        } else if (dates.length === 1) {
+          result.timeline.push({ phase, startDate: dates[0], endDate: '', status: 'Upcoming' });
+        }
+      }
+
+      // --- Solution design extraction ---
+      const extractSection = (keywords) => {
+        const lines = text.split('\n');
+        for (let i = 0; i < lines.length; i++) {
+          if (keywords.some(k => new RegExp(k, 'i').test(lines[i]))) {
+            const content = [];
+            for (let j = i + 1; j < Math.min(i + 8, lines.length); j++) {
+              const line = lines[j].trim();
+              if (!line) break;
+              if (/^(#{1,3}\s|[A-Z][A-Z\s]{3,}:)/.test(line)) break;
+              content.push(line.replace(/^[\-\*•]\s*/, ''));
+            }
+            if (content.length) return content.join(', ');
+            // Check same line after colon
+            const m = lines[i].match(/:\s*(.+)/);
+            if (m) return m[1].trim();
+          }
+        }
+        return '';
+      };
+
+      result.solutionDesign.schemas = extractSection(['xdm\\s*schema', 'schemas?\\b']);
+      result.solutionDesign.datasets = extractSection(['datasets?\\b']);
+      result.solutionDesign.audiences = extractSection(['audiences?\\b', 'segments?\\b']);
+      result.solutionDesign.journeys = extractSection(['journeys?\\b', 'use\\s*cases?\\b']);
+      result.solutionDesign.destinations = extractSection(['destinations?\\b', 'activation\\s*channels?']);
+      result.solutionDesign.dataSources = extractSection(['data\\s*sources?', 'source\\s*systems?', 'ingestion']);
+
+      // --- Scope summary: look for executive summary or scope section ---
+      const scopeText = extractSection(['scope\\b', 'executive\\s*summary', 'overview', 'objective']);
+      if (scopeText) result.scopeSummary = scopeText;
+
+      // --- Risks ---
+      result.risks = extractSection(['risks?\\b', 'issues?\\b', 'blockers?', 'dependencies', 'concerns?']);
+
+      // --- Client name: look for common patterns ---
+      const namePatterns = [
+        /(?:client|account|customer|company)\s*(?:name)?\s*[:\-–]\s*([^\n,]{2,40})/i,
+        /(?:prepared\s+for|statement\s+of\s+work\s+for|sow\s+for)\s*[:\-–]?\s*([^\n,]{2,40})/i,
+      ];
+      for (const np of namePatterns) {
+        const m = text.match(np);
+        if (m) { result.name = m[1].trim(); break; }
+      }
+
+      return result;
+    }
+
+    /* ══════════════════════════════════════════════════════════════════
        COMPONENTS
        ══════════════════════════════════════════════════════════════════ */
 
@@ -893,6 +1094,280 @@
     }
 
     /* ══════════════════════════════════════════════════════════════════
+       IMPORT MODAL — paste text, upload file, or JSON import
+       ══════════════════════════════════════════════════════════════════ */
+    function ImportModal({ onImport, onClose }) {
+      const [mode, setMode] = useState('paste'); // paste | file | json
+      const [rawText, setRawText] = useState('');
+      const [parsed, setParsed] = useState(null);
+      const [fileName, setFileName] = useState('');
+      const fileRef = useRef(null);
+
+      const handleParse = () => {
+        if (!rawText.trim()) return;
+        // Try JSON first
+        if (mode === 'json') {
+          try {
+            const data = JSON.parse(rawText);
+            // Support single account object or { accounts: [...] }
+            const acct = Array.isArray(data) ? data[0] : data.accounts ? data.accounts[0] : data;
+            setParsed({ ...emptyAccount(), ...acct, id: crypto.randomUUID(), updatedAt: Date.now(), createdAt: Date.now(), _source: 'json' });
+            return;
+          } catch (e) {
+            alert('Invalid JSON. Check the format and try again.');
+            return;
+          }
+        }
+        const result = parseDocument(rawText);
+        // Merge into an empty account template
+        const account = {
+          ...emptyAccount(),
+          name: result.name,
+          vertical: result.vertical,
+          engagementType: result.engagementType || 'AEP Implementation',
+          scopeSummary: result.scopeSummary,
+          componentsInScope: result.componentsInScope,
+          timeline: result.timeline.length > 0 ? result.timeline : emptyAccount().timeline,
+          resources: result.resources,
+          solutionDesign: {
+            schemas: result.solutionDesign.schemas,
+            datasets: result.solutionDesign.datasets,
+            audiences: result.solutionDesign.audiences,
+            journeys: result.solutionDesign.journeys,
+            destinations: result.solutionDesign.destinations,
+            dataSources: result.solutionDesign.dataSources,
+            architectureNotes: result.solutionDesign.architectureNotes || '',
+          },
+          risks: result.risks,
+          _confidence: result.confidence,
+          _source: 'parsed',
+        };
+        setParsed(account);
+      };
+
+      const handleFileUpload = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        setFileName(file.name);
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          setRawText(ev.target.result);
+        };
+        reader.readAsText(file);
+      };
+
+      const handleConfirm = () => {
+        if (!parsed) return;
+        const { _confidence, _source, ...account } = parsed;
+        onImport(account);
+      };
+
+      const fieldCount = parsed ? [
+        parsed.name, parsed.vertical, parsed.engagementType, parsed.scopeSummary,
+        parsed.componentsInScope?.length > 0, parsed.timeline?.some(t => t.startDate),
+        parsed.resources?.length > 0, parsed.risks,
+        ...Object.values(parsed.solutionDesign || {}).map(v => !!v),
+      ].filter(Boolean).length : 0;
+
+      const modes = [
+        { key: 'paste', label: 'Paste Text' },
+        { key: 'file', label: 'Upload File' },
+        { key: 'json', label: 'JSON Import' },
+      ];
+
+      return (
+        <div style={styles.overlay} onClick={onClose}>
+          <div style={{ ...styles.modal, maxWidth: parsed ? 700 : 560 }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <span style={{ fontWeight: 700, fontSize: 13, letterSpacing: '0.1em', color: THEME.text }}>IMPORT DOCUMENT</span>
+              <button style={{ background: 'none', border: 'none', color: THEME.textMuted, fontSize: 16, cursor: 'pointer' }} onClick={onClose}>✕</button>
+            </div>
+
+            {/* Mode tabs */}
+            <div style={{ display: 'flex', gap: 0, borderBottom: `1px solid ${THEME.border}`, marginBottom: 16 }}>
+              {modes.map(m => (
+                <button key={m.key} onClick={() => { setMode(m.key); setParsed(null); }} style={{
+                  ...styles.tabBtn,
+                  color: mode === m.key ? THEME.primary : THEME.textMuted,
+                  borderBottom: mode === m.key ? `2px solid ${THEME.primary}` : '2px solid transparent',
+                }}>
+                  {m.label}
+                </button>
+              ))}
+            </div>
+
+            {!parsed ? (
+              <>
+                {/* Input area */}
+                {mode === 'paste' && (
+                  <div>
+                    <p style={{ fontSize: 11, color: THEME.textMuted, marginBottom: 8, lineHeight: 1.5 }}>
+                      Paste content from a SOW, scope document, project plan, architecture doc, or meeting notes. The parser will extract client details, AEP components, timelines, resources, and solution design elements.
+                    </p>
+                    <textarea
+                      value={rawText}
+                      onChange={e => setRawText(e.target.value)}
+                      style={{ ...styles.input, minHeight: 200, resize: 'vertical', fontFamily: 'Inter, monospace', fontSize: 12, lineHeight: 1.6 }}
+                      placeholder={'Paste document text here...\n\nExample:\nClient: Nordstrom\nEngagement: AEP Implementation\n\nScope:\n- Real-Time CDP deployment\n- Web SDK migration from legacy Analytics\n- Identity resolution across web, mobile, POS\n\nTimeline:\n- Discovery: Jan 6 - Jan 31, 2026\n- Design: Feb 3 - Feb 28, 2026\n...\n\nResources:\n- Solution Architect: Jane Smith\n- Data Engineer: John Doe'}
+                    />
+                  </div>
+                )}
+
+                {mode === 'file' && (
+                  <div>
+                    <p style={{ fontSize: 11, color: THEME.textMuted, marginBottom: 8, lineHeight: 1.5 }}>
+                      Upload a text file (.txt, .md, .csv) or copy of a document. Content will be parsed for AEP account details.
+                    </p>
+                    <input ref={fileRef} type="file" accept=".txt,.md,.csv,.json,.tsv" onChange={handleFileUpload}
+                      style={{ display: 'none' }} />
+                    <button onClick={() => fileRef.current?.click()} style={{
+                      ...styles.addBtn, width: '100%', background: THEME.surfaceAlt, border: `1px dashed ${THEME.border}`, color: THEME.textSecondary, marginBottom: 12,
+                    }}>
+                      {fileName ? `Selected: ${fileName}` : 'Choose File...'}
+                    </button>
+                    {rawText && (
+                      <textarea value={rawText} onChange={e => setRawText(e.target.value)}
+                        style={{ ...styles.input, minHeight: 150, resize: 'vertical', fontFamily: 'Inter, monospace', fontSize: 11 }} />
+                    )}
+                  </div>
+                )}
+
+                {mode === 'json' && (
+                  <div>
+                    <p style={{ fontSize: 11, color: THEME.textMuted, marginBottom: 8, lineHeight: 1.5 }}>
+                      Paste a JSON object matching the account schema. Useful for exporting/importing between dashboards.
+                    </p>
+                    <textarea
+                      value={rawText}
+                      onChange={e => setRawText(e.target.value)}
+                      style={{ ...styles.input, minHeight: 200, resize: 'vertical', fontFamily: 'monospace', fontSize: 11, lineHeight: 1.5 }}
+                      placeholder={'{\n  "name": "Nordstrom",\n  "vertical": "Retail",\n  "engagementType": "AEP Implementation",\n  "health": "On Track",\n  "currentPhase": "Build",\n  "componentsInScope": ["Real-Time CDP", "Data Collection / Web SDK"],\n  "scopeSummary": "...",\n  ...\n}'}
+                    />
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
+                  <button style={styles.cancelBtn} onClick={onClose}>Cancel</button>
+                  <button style={{ ...styles.saveBtn, opacity: rawText.trim() ? 1 : 0.4 }} onClick={handleParse} disabled={!rawText.trim()}>
+                    Parse & Preview
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Preview extracted data */}
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                    <div style={{ width: 4, height: 16, background: THEME.success, borderRadius: 2 }} />
+                    <span style={{ fontSize: 12, fontWeight: 600, color: THEME.text }}>
+                      {parsed._source === 'json' ? 'JSON Import' : `Extracted ${fieldCount} fields`}
+                    </span>
+                    <button onClick={() => setParsed(null)} style={{ fontSize: 10, color: THEME.primary, background: 'none', border: 'none', cursor: 'pointer', marginLeft: 'auto' }}>
+                      Back to edit
+                    </button>
+                  </div>
+
+                  <div style={{ maxHeight: 400, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {/* Editable name */}
+                    <div style={styles.previewRow}>
+                      <span style={styles.previewLabel}>Account Name</span>
+                      <input value={parsed.name} onChange={e => setParsed(p => ({ ...p, name: e.target.value }))}
+                        style={{ ...styles.input, marginBottom: 0 }} placeholder="Enter account name" />
+                    </div>
+
+                    {/* Vertical */}
+                    <div style={styles.previewRow}>
+                      <span style={styles.previewLabel}>Vertical</span>
+                      <input value={parsed.vertical} onChange={e => setParsed(p => ({ ...p, vertical: e.target.value }))}
+                        style={{ ...styles.input, marginBottom: 0 }} placeholder="Industry vertical" />
+                    </div>
+
+                    {/* Engagement type */}
+                    <div style={styles.previewRow}>
+                      <span style={styles.previewLabel}>Engagement Type</span>
+                      <span style={{ fontSize: 12, color: THEME.text }}>{parsed.engagementType}</span>
+                    </div>
+
+                    {/* Components */}
+                    {parsed.componentsInScope?.length > 0 && (
+                      <div style={styles.previewRow}>
+                        <span style={styles.previewLabel}>Components ({parsed.componentsInScope.length})</span>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                          {parsed.componentsInScope.map(c => (
+                            <span key={c} style={{ fontSize: 10, padding: '2px 8px', background: THEME.primary + '25', color: THEME.accent, borderRadius: 3, border: `1px solid ${THEME.primary}` }}>{c}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Scope summary */}
+                    {parsed.scopeSummary && (
+                      <div style={styles.previewRow}>
+                        <span style={styles.previewLabel}>Scope Summary</span>
+                        <p style={{ fontSize: 12, color: THEME.textSecondary, lineHeight: 1.5, margin: 0 }}>{parsed.scopeSummary}</p>
+                      </div>
+                    )}
+
+                    {/* Timeline */}
+                    {parsed.timeline?.some(t => t.startDate) && (
+                      <div style={styles.previewRow}>
+                        <span style={styles.previewLabel}>Timeline ({parsed.timeline.filter(t => t.startDate).length} phases)</span>
+                        {parsed.timeline.filter(t => t.startDate).map((t, i) => (
+                          <div key={i} style={{ fontSize: 11, color: THEME.textSecondary, display: 'flex', gap: 8 }}>
+                            <span style={{ width: 70, fontWeight: 500 }}>{t.phase}</span>
+                            <span>{t.startDate}{t.endDate ? ` — ${t.endDate}` : ''}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Resources */}
+                    {parsed.resources?.length > 0 && (
+                      <div style={styles.previewRow}>
+                        <span style={styles.previewLabel}>Resources ({parsed.resources.length})</span>
+                        {parsed.resources.map((r, i) => (
+                          <div key={i} style={{ fontSize: 11, color: THEME.textSecondary }}>
+                            {r.role}{r.name ? `: ${r.name}` : ''}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Solution design sections */}
+                    {Object.entries(parsed.solutionDesign || {}).filter(([k, v]) => v).map(([k, v]) => {
+                      const label = DEFAULT_SOLUTION_SECTIONS.find(s => s.key === k)?.label || k;
+                      return (
+                        <div key={k} style={styles.previewRow}>
+                          <span style={styles.previewLabel}>{label}</span>
+                          <p style={{ fontSize: 11, color: THEME.textSecondary, margin: 0, lineHeight: 1.4 }}>{v}</p>
+                        </div>
+                      );
+                    })}
+
+                    {/* Risks */}
+                    {parsed.risks && (
+                      <div style={styles.previewRow}>
+                        <span style={styles.previewLabel}>Risks</span>
+                        <p style={{ fontSize: 11, color: '#F5A623', margin: 0 }}>{parsed.risks}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                  <button style={styles.cancelBtn} onClick={onClose}>Cancel</button>
+                  <button style={{ ...styles.saveBtn, opacity: parsed.name?.trim() ? 1 : 0.4 }} onClick={handleConfirm} disabled={!parsed.name?.trim()}>
+                    Create Account
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    /* ══════════════════════════════════════════════════════════════════
        ACCOUNT LIST CARD (Left sidebar)
        ══════════════════════════════════════════════════════════════════ */
     function AccountCard({ account, selected, onClick }) {
@@ -952,6 +1427,7 @@
 
       const [selectedId, setSelectedId] = useState(null);
       const [showNewModal, setShowNewModal] = useState(false);
+      const [showImportModal, setShowImportModal] = useState(false);
       const [searchTerm, setSearchTerm] = useState('');
       const [filterHealth, setFilterHealth] = useState('All');
 
@@ -980,6 +1456,28 @@
         setAccounts(prev => [acc, ...prev]);
         setSelectedId(acc.id);
         setShowNewModal(false);
+      };
+
+      const handleImport = (parsed) => {
+        const acc = {
+          id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+          name: parsed.name || 'Imported Account',
+          vertical: parsed.vertical || '',
+          engagementType: parsed.engagementType || engagementTypes[0] || '',
+          health: 'On Track',
+          currentPhase: 'Discovery',
+          scopeSummary: parsed.scopeSummary || '',
+          componentsInScope: parsed.componentsInScope || [],
+          timeline: parsed.timeline || PHASES.map(p => ({ phase: p, startDate: '', endDate: '', status: 'Not Started' })),
+          resources: parsed.resources || [],
+          solutionDesign: parsed.solutionDesign || DEFAULT_SOLUTION_SECTIONS.reduce((o, s) => { o[s.key] = ''; return o; }, {}),
+          risks: parsed.risks || [],
+          nextActions: [],
+          createdAt: new Date().toISOString(),
+        };
+        setAccounts(prev => [acc, ...prev]);
+        setSelectedId(acc.id);
+        setShowImportModal(false);
       };
 
       const updateAccount = (acc) => {
@@ -1052,9 +1550,10 @@
               )}
             </div>
 
-            {/* Add Button */}
-            <div style={{ padding: 16, borderTop: `1px solid ${THEME.border}` }}>
+            {/* Add / Import Buttons */}
+            <div style={{ padding: 16, borderTop: `1px solid ${THEME.border}`, display: 'flex', flexDirection: 'column', gap: 6 }}>
               <button onClick={() => setShowNewModal(true)} style={styles.addBtn}>+ New Account</button>
+              <button onClick={() => setShowImportModal(true)} style={{ ...styles.addBtn, background: 'transparent', border: `1px solid ${THEME.primary}`, color: THEME.primary }}>↑ Import from Docs</button>
             </div>
           </div>
 
@@ -1097,6 +1596,7 @@
 
           {/* ── New Account Modal ── */}
           {showNewModal && <NewAccountModal onSave={addAccount} onClose={() => setShowNewModal(false)} engagementTypes={engagementTypes} onAddEngagementType={addEngagementType} />}
+          {showImportModal && <ImportModal onImport={handleImport} onClose={() => setShowImportModal(false)} />}
         </div>
       );
     }
@@ -1218,6 +1718,14 @@
         background: THEME.surfaceAlt, border: `1px solid ${THEME.border}`,
         borderRadius: 6, padding: '24px 28px', width: '100%', maxWidth: 520,
         maxHeight: '90vh', overflowY: 'auto',
+      },
+      previewRow: {
+        display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+        padding: '6px 0', borderBottom: `1px solid ${THEME.border}`,
+      },
+      previewLabel: {
+        fontWeight: 600, fontSize: 10, letterSpacing: '0.06em',
+        color: THEME.textMuted, textTransform: 'uppercase', minWidth: 120,
       },
     };
 

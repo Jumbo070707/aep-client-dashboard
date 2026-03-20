@@ -41,6 +41,7 @@
        CONSTANTS & CONFIG
        ══════════════════════════════════════════════════════════════════ */
 
+    const APP_VERSION = '1.3.0';
     const STORAGE_KEY = 'aep-dashboard-v1';
     const CONFIG_KEY = 'aep-dashboard-config-v1';
 
@@ -1854,6 +1855,9 @@
               </div>
               <span style={{ fontSize: 10, color: THEME.textMuted, fontWeight: 300, marginLeft: 12 }}>
                 {accounts.length} account{accounts.length !== 1 ? 's' : ''} tracked
+              </span>
+              <span style={{ fontSize: 9, color: THEME.textMuted, fontWeight: 400, marginLeft: 12, opacity: 0.5 }}>
+                v{APP_VERSION}
               </span>
             </div>
 
